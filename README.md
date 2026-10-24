@@ -1,5 +1,6 @@
-# Toolbar-Studio
-(Vibe-Coded)
+# Toolbar-Studio (Vibe-Coded)
+
+
 A lightweight Firefox theme that adds custom GIF imagery and spacing to the tab bar, offering a playful and minimal visual upgrade.
 
 Uma ferramenta que corta imagens e posiciona GIFs no fundo da barra do Firefox, com biblioteca de fotos e de GIFs.
