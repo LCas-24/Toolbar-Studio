@@ -29,7 +29,7 @@
   .stage:active{cursor:grabbing}
   .stage canvas{display:block}
   .hint{color:var(--mut);font-size:13px;margin:8px 0 16px}
-  #gifStage{background-size:cover;background-position:center;background-color:#1a1a1a}
+  #gifStage{background-size:cover;background-position:center;background-repeat:no-repeat;background-color:#1a1a1a}
   #gifEl{position:absolute;max-width:none;user-select:none;-webkit-user-drag:none;display:none}
   input[type=range]{width:220px}
   pre{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px;overflow:auto;margin:0 0 10px}
@@ -44,12 +44,34 @@
   .card .del{right:4px}
   .card .fav{left:4px}
   .card .fav.on{color:#ffd24d;border-color:#ffd24d}
+
+  /* Botão liga/desliga "Estabilizar": o checkbox real fica invisível e o trilho desenhado o representa */
+  .switch{position:relative;flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:15px;padding:9px 0;cursor:pointer}
+  .switch input{position:absolute;opacity:0;width:0;height:0}
+  .switch .trilho{position:relative;width:40px;height:22px;border-radius:11px;background:var(--line);transition:background .15s}
+  .switch .trilho::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--text);transition:transform .15s}
+  .switch input:checked + .trilho{background:var(--acc)}
+  .switch input:checked + .trilho::after{transform:translateX(18px);background:#0b1220}
+  .switch input:focus-visible + .trilho{outline:2px solid var(--acc);outline-offset:2px}
+
+  /* Prévia das camadas já aplicadas, desenhada atrás do GIF que está sendo posicionado */
+  #prevCamadas{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+  #prevCamadas img{position:absolute;max-width:none;user-select:none}
+
+  /* Lista das camadas ativas no Firefox */
+  h2{font-size:16px;margin:24px 0 8px}
+  #camadas{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;margin-bottom:12px;color:var(--mut)}
+  .camada{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:6px 8px;color:var(--text)}
+  .camada img{width:72px;height:36px;object-fit:cover;border-radius:4px;background:#000;flex:none}
+  .camada .txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+  .camada .txt small{display:block;color:var(--mut)}
+  .camada button{padding:2px 8px}
 </style>
 </head>
 <body>
 <main>
   <h1>Cortador de fundo do Firefox</h1>
-  <p class="sub">Corta imagens PNG no tamanho da barra e posiciona GIFs, sem recomprimir nada.</p>
+  <p class="sub">Corta imagens PNG no tamanho da barra e posiciona GIFs, sem recomprimir nada. Você pode ter várias imagens e vários GIFs na barra ao mesmo tempo.</p>
 
   <div class="row">
     <label>Largura da tela (px do CSS)
@@ -71,40 +93,45 @@
   <section id="secPng">
     <div class="row">
       <label class="btn" style="flex-direction:row;color:var(--text)">Escolher imagem
-        <input type="file" id="fileImg" accept="image/*" hidden>
+        <input type="file" id="fileImg" accept="image/*" multiple hidden>
+      </label>
+      <label class="switch" title="Ligado: a imagem preenche a barra toda. Desligado: a imagem fica no tamanho original e pode ser arrastada pela barra.">
+        <input type="checkbox" id="estab" checked>
+        <span class="trilho"></span>
+        <span>Estabilizar</span>
       </label>
       <label>Zoom
         <input type="range" id="zoom" min="1" max="4" step="0.01" value="1">
       </label>
       <button id="rotPng" disabled>Girar 90°</button>
       <button id="exportPng" disabled>Baixar PNG</button>
-      <button class="primary" id="applyPng" disabled>Aplicar no Firefox</button>
-      <button id="removePng">Remover fundo atual</button>
+      <button class="primary" id="applyPng" disabled>Adicionar à barra</button>
     </div>
     <div class="stage" id="stage">
       <canvas id="cv"></canvas>
       <div class="empty" id="emptyPng">Arraste uma imagem para cá ou use "Escolher imagem"</div>
     </div>
-    <p class="hint" id="infoPng">Arraste a imagem para enquadrar. Use o scroll do mouse ou o zoom para aproximar.</p>
+    <p class="hint" id="infoPng">Arraste a imagem para enquadrar. Use o scroll do mouse ou o zoom para aproximar. Desligue "Estabilizar" para manter a imagem no tamanho original e arrastá-la pela barra.</p>
+    <p class="hint">Cada "Adicionar à barra" cria uma nova camada, sem apagar as anteriores. Uma imagem estabilizada cobre as que estão atrás dela; para trocar, remova a antiga na lista de camadas abaixo. Toda imagem aberta aqui é guardada na biblioteca.</p>
   </section>
 
   <!-- GIF -->
   <section id="secGif" hidden>
     <div class="row">
       <label class="btn" style="flex-direction:row;color:var(--text)">Escolher GIF
-        <input type="file" id="fileGif" accept="image/gif" hidden>
+        <input type="file" id="fileGif" accept="image/gif" multiple hidden>
       </label>
       <label>Altura do GIF (% da barra)
         <input type="range" id="gifSize" min="20" max="200" step="1" value="100">
       </label>
-      <button class="primary" id="applyGif" disabled>Aplicar no Firefox</button>
-      <button id="removeGif">Remover GIF atual</button>
+      <button class="primary" id="applyGif" disabled>Adicionar à barra</button>
     </div>
     <div class="stage" id="gifStage">
+      <div id="prevCamadas"></div>
       <img id="gifEl" alt="">
       <div class="empty" id="emptyGif">Arraste um GIF para cá ou use "Escolher GIF"</div>
     </div>
-    <p class="hint">Arraste o GIF pela barra até a posição desejada. Se você já exportou um PNG, ele aparece de fundo.</p>
+    <p class="hint">Arraste o GIF pela barra até a posição desejada. As imagens e os outros GIFs que já estão na barra aparecem de fundo, para você não sobrepor sem querer. Cada "Adicionar à barra" cria um GIF novo; todo GIF aberto aqui é guardado na biblioteca.</p>
     <p class="hint" id="limGif"></p>
     <pre id="css">Escolha um GIF para gerar o CSS.</pre>
     <button id="copyCss" disabled>Copiar CSS</button>
@@ -132,6 +159,20 @@
     <p class="hint">Clique num GIF para abrir no editor de GIF. Use a ★ para favoritar e o × para excluir da biblioteca.</p>
   </section>
 
+  <!-- Camadas que estão na barra do Firefox agora -->
+  <section id="secCamadas">
+    <h2>Na barra do Firefox agora</h2>
+    <div id="camadas">Nenhuma imagem ou GIF aplicado.</div>
+    <div class="row">
+      <label>Deslocar GIFs com a barra de favoritos escondida (px)
+        <input type="number" id="offset" value="0" min="0" max="3000">
+      </label>
+      <button id="salvarOffset">Salvar deslocamento</button>
+      <button id="limparTudo">Remover todas</button>
+    </div>
+    <p class="hint">Os GIFs ficam sempre na frente das imagens, e o mais recente fica por cima. Cada mudança reinicia o Firefox.</p>
+  </section>
+
   <p id="status" role="status"></p>
 </main>
 
@@ -142,6 +183,7 @@ const api = (url, opts = {}) => fetch(url, {...opts, headers: {'X-Token': TOKEN,
 const Winp = $('W'), Hinp = $('H');
 let W = 1920, H = 110, SW = 900, SH = 50;
 
+// Recalcula o tamanho da prévia (SW x SH) mantendo a proporção da barra real (W x H)
 function layout(){
   W = Math.max(200, +Winp.value || 1920);
   H = Math.max(20, +Hinp.value || 110);
@@ -155,33 +197,98 @@ function layout(){
   $('gifStage').style.width = SW + 'px'; $('gifStage').style.height = SH + 'px';
 }
 
-/* ---------- Envio para o Firefox (via servidor.py) ---------- */
+/* ---------- Envio para o Firefox (via servidor) ---------- */
 function setStatus(t){ $('status').textContent = t; }
-async function aplicar(query, blob){
-  setStatus('Enviando...');
+// Envia uma requisição de escrita ao servidor, mostra a resposta e atualiza a lista de camadas
+async function pedir(url, opts, enviando){
+  setStatus(enviando);
   try{
-    const r = await api('/apply?' + query, {method:'POST', body:blob});
+    const r = await api(url, opts);
     const j = await r.json();
-    setStatus(j.msg || 'Pedido recusado. Reabra a página pelo endereço que o servidor.py mostrou.');
+    // sem "msg" o servidor recusou o pedido: 404 = rota que ele não conhece (servidor de outra versão);
+    // 403 = endereço, origem ou token (senha temporária) que ele não aceita
+    setStatus(j.msg || (r.status === 404
+      ? 'Erro 404: este servidor é de uma versão diferente do cortador.html. Use os dois arquivos mais novos, na mesma pasta, e reinicie o servidor.'
+      : `Erro ${r.status}: pedido recusado. O terminal do servidor mostra o motivo (começa com "Pedido recusado"). Se for token ou endereço, feche esta aba e abra de novo o endereço que o terminal mostrou.`));
   }catch{
-    setStatus('Não consegui falar com o servidor.py. Ele está rodando? (Abra esta página pelo endereço que o servidor.py mostrou ao iniciar.)');
+    setStatus('Não consegui falar com o servidor. Ele está rodando? (Abra esta página pelo endereço que o servidor mostrou ao iniciar.)');
+  }
+  carregarCamadas();
+}
+// Adiciona o arquivo como uma nova camada (imagem ou GIF) na barra
+const aplicar = (query, blob) => pedir('/camada/add?' + query, {method:'POST', body:blob}, 'Enviando...');
+
+/* ---------- Camadas aplicadas ---------- */
+let camadasAtuais = [];
+
+// Mesma ordem de empilhamento do servidor: GIFs primeiro, depois imagens; o mais recente por cima
+const ordenar = cs => [...cs.filter(c => c.tipo === 'gif')].reverse().concat([...cs.filter(c => c.tipo === 'png')].reverse());
+const urlCamada = c => '/camada/' + encodeURIComponent(c.arq) + '?t=' + encodeURIComponent(TOKEN);
+
+async function carregarCamadas(){
+  try{
+    const e = await (await api('/estado')).json();
+    camadasAtuais = e.camadas || [];
+    $('offset').value = e.offset || 0;
+  }catch{ return; }
+  renderCamadas();
+  renderPrev();
+}
+
+// Lista as camadas ativas, de cima para baixo, cada uma com o botão de remover
+function renderCamadas(){
+  const box = $('camadas'); box.textContent = '';
+  if(!camadasAtuais.length){ box.textContent = 'Nenhuma imagem ou GIF aplicado.'; return; }
+  for(const c of ordenar(camadasAtuais)){
+    const item = document.createElement('div'); item.className = 'camada';
+    item.title = `${c.bs} | ${c.bp}`;
+    const im = document.createElement('img'); im.src = urlCamada(c); im.alt = '';
+    const txt = document.createElement('div'); txt.className = 'txt';
+    txt.textContent = c.nome || c.arq;
+    const sub = document.createElement('small');
+    sub.textContent = c.tipo === 'gif' ? 'GIF' : (c.bs === 'cover' ? 'Imagem estabilizada' : 'Imagem livre');
+    txt.append(sub);
+    const x = document.createElement('button'); x.textContent = '×'; x.title = 'Remover da barra';
+    x.onclick = () => {
+      if(!confirm('Remover esta camada da barra? O Firefox vai reiniciar.')) return;
+      pedir('/camada/del?id=' + encodeURIComponent(c.id), {method:'POST'}, 'Removendo...');
+    };
+    item.append(im, txt, x); box.append(item);
   }
 }
 
-async function remover(tipo){
-  if(!confirm(`Remover o fundo.${tipo} atual do Firefox?`)) return;
-  setStatus('Removendo...');
-  try{
-    const r = await api('/remover?tipo=' + tipo, {method:'POST'});
-    const j = await r.json();
-    setStatus(j.msg || 'Pedido recusado. Reabra a página pelo endereço que o servidor.py mostrou.');
-    if(tipo === 'png') $('gifStage').style.backgroundImage = '';
-  }catch{
-    setStatus('Não consegui falar com o servidor.py. Ele está rodando?');
+// Redesenha, no palco, as camadas já aplicadas na posição e tamanho reais (convertidos para a prévia)
+function renderPrev(){
+  const box = $('prevCamadas'); box.textContent = '';
+  const k = W / SW;
+  // da base para o topo: imagens mais antigas primeiro, GIFs mais novos por último
+  for(const c of ordenar(camadasAtuais).reverse()){
+    const im = document.createElement('img'); im.src = urlCamada(c); im.alt = '';
+    const st = im.style;
+    if(c.tipo === 'gif'){
+      const t = /auto (\d+)px/.exec(c.bs), p = /right (-?\d+)px top (-?\d+)px/.exec(c.bp);
+      if(!t || !p) continue;
+      st.height = (t[1] / k) + 'px'; st.right = (p[1] / k) + 'px'; st.top = (p[2] / k) + 'px';
+    }else if(c.bs === 'cover'){
+      st.left = '0'; st.top = '0'; st.width = '100%'; st.height = '100%';
+      st.objectFit = 'cover'; st.objectPosition = '80% center';
+    }else{
+      const t = /(\d+)px (\d+)px/.exec(c.bs), p = /(-?\d+)px (-?\d+)px/.exec(c.bp);
+      if(!t || !p) continue;
+      st.width = (t[1] / k) + 'px'; st.height = (t[2] / k) + 'px';
+      st.left = (p[1] / k) + 'px'; st.top = (p[2] / k) + 'px';
+    }
+    box.append(im);
   }
 }
-$('removePng').onclick = () => remover('png');
-$('removeGif').onclick = () => remover('gif');
+
+$('salvarOffset').onclick = () =>
+  pedir('/offset?px=' + encodeURIComponent($('offset').value || 0), {method:'POST'}, 'Salvando...');
+$('limparTudo').onclick = () => {
+  if(!camadasAtuais.length) return;
+  if(!confirm('Remover todas as imagens e GIFs da barra? O Firefox vai reiniciar.')) return;
+  pedir('/camada/del?id=todas', {method:'POST'}, 'Removendo...');
+};
 
 /* ---------- Abas ---------- */
 function showTab(nome){
@@ -202,23 +309,65 @@ $('tabLibGif').onclick = () => showTab('libgif');
 
 /* ---------- PNG ---------- */
 const cv = $('cv'), ctx = cv.getContext('2d');
-let imgFile = null, jaSalva = true;
+let imgFile = null, jaSalva = true, girou = false;
 let img = null, s = 1, ox = 0, oy = 0, zoomV = 1, bgUrl = null;
 
+// Estabilizar ligado: imagem recortada e preenchendo a barra (cover).
+// Estabilizar desligado ("modo livre"): imagem inteira no tamanho original,
+// posicionada em (fx, fy) e ampliada por fs, tudo em px do CSS da barra real.
+let estab = true;
+let fs = 1, fx = 0, fy = 0;
+
+// Mantém um valor v dentro do intervalo em que um item de tamanho "tam" não deixa
+// vazio dentro de "max" (imagem menor que a barra) nem se afasta dela (imagem maior)
+const limite = (v, tam, max) => Math.min(Math.max(0, max - tam), Math.max(Math.min(0, max - tam), v));
+
+// --- Modo estabilizado ---
 function minScale(){ return Math.max(SW / img.naturalWidth, SH / img.naturalHeight); }
 function clamp(){
   ox = Math.min(0, Math.max(SW - img.naturalWidth * s, ox));
   oy = Math.min(0, Math.max(SH - img.naturalHeight * s, oy));
 }
+
+// --- Modo livre ---
+// Tamanho da imagem na barra real: com fs = 1, cada pixel da imagem ocupa um pixel
+// físico da tela, ou seja, sem perda de qualidade
+function dimsLivre(){
+  const d = window.devicePixelRatio || 1;
+  return {w: img.naturalWidth / d * fs, h: img.naturalHeight / d * fs};
+}
+function limitarLivre(){
+  const {w, h} = dimsLivre();
+  fx = limite(fx, w, W); fy = limite(fy, h, H);
+}
+// Desenha a imagem inteira na prévia; o que ela não cobrir mostra a cor de fundo da barra
+function desenharLivre(){
+  const k = W / SW, {w, h} = dimsLivre();
+  ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0, 0, SW, SH);
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, fx / k, fy / k, w / k, h / k);
+  const nw = img.naturalWidth, nh = img.naturalHeight;
+  $('infoPng').textContent = `Modo livre: a imagem vai inteira, sem recorte, com ${Math.round(nw * fs)} × ${Math.round(nh * fs)} px (original: ${nw} × ${nh}). Arraste para posicionar.`
+    + (w < W || h < H ? ' Onde a imagem não cobrir a barra, aparece a cor de fundo.' : '');
+}
+function fitLivre(){
+  if(!img) return;
+  fs = 1; $('zoom').value = 1;
+  const {w, h} = dimsLivre();
+  fx = (W - w) / 2; fy = (H - h) / 2;
+  limitarLivre(); drawPng();
+}
+
 function drawPng(){
   ctx.clearRect(0,0,SW,SH);
   if(!img) return;
+  if(!estab) return desenharLivre();
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, ox, oy, img.naturalWidth * s, img.naturalHeight * s);
   const w = Math.round(SW / s), h = Math.round(SH / s);
   const Wf = Math.round(W * (window.devicePixelRatio || 1));
   $('infoPng').textContent = `Arquivo de saída: ${w} × ${h} px (resolução original da imagem, sem redução).`
-    + (w < Wf ? ` ATENÇÃO: a tela tem ${Wf} px físicos de largura, então o Firefox vai ampliar esta imagem e ela ficará borrada. Use uma imagem com pelo menos ${Wf} px de largura.` : '');
+    + (w < Wf ? ` ATENÇÃO: a tela tem ${Wf} px físicos de largura, então o Firefox vai ampliar esta imagem e ela ficará borrada. Use uma imagem com pelo menos ${Wf} px de largura, ou desligue "Estabilizar" para usá-la no tamanho original.` : '');
 }
 function fitImage(){
   if(!img) return;
@@ -228,56 +377,99 @@ function fitImage(){
   oy = (SH - img.naturalHeight * s) / 2;
   drawPng();
 }
+
+// Ajusta a faixa do controle de zoom ao modo atual (1x a 4x estabilizado; 0,25x a 4x livre)
+function configurarZoom(){
+  const z = $('zoom');
+  z.min = estab ? 1 : 0.25; z.max = 4; z.value = 1;
+}
+// Reenquadra a imagem do zero conforme o modo ligado
+function enquadrar(){
+  configurarZoom();
+  if(estab) fitImage(); else fitLivre();
+}
+
 function setZoom(z){
   if(!img) return;
-  z = Math.min(4, Math.max(1, z));
-  const cx = (SW/2 - ox) / s, cy = (SH/2 - oy) / s;
-  zoomV = z; s = minScale() * z;
-  ox = SW/2 - cx * s; oy = SH/2 - cy * s;
-  clamp(); drawPng();
+  if(estab){
+    z = Math.min(4, Math.max(1, z));
+    const cx = (SW/2 - ox) / s, cy = (SH/2 - oy) / s;
+    zoomV = z; s = minScale() * z;
+    ox = SW/2 - cx * s; oy = SH/2 - cy * s;
+    clamp(); drawPng();
+  }else{
+    z = Math.min(4, Math.max(0.25, z));
+    // guarda qual ponto da imagem está no centro da barra para o zoom crescer a partir dele
+    const a = dimsLivre();
+    const rx = (W/2 - fx) / a.w, ry = (H/2 - fy) / a.h;
+    fs = z;
+    const b = dimsLivre();
+    fx = W/2 - rx * b.w; fy = H/2 - ry * b.h;
+    limitarLivre(); drawPng();
+  }
   $('zoom').value = z;
 }
 function loadImage(file, daLib){
   if(!file || !file.type.startsWith('image/')) return;
-  imgFile = file; jaSalva = !!daLib;
+  imgFile = file; jaSalva = !!daLib; girou = false;
+  guardarNaLib(); // toda imagem aberta já vai para a biblioteca (se veio dela, não repete)
   const url = URL.createObjectURL(file);
   const im = new Image();
   im.onload = () => {
     img = im; $('emptyPng').hidden = true;
     $('exportPng').disabled = false; $('applyPng').disabled = false; $('rotPng').disabled = false;
-    fitImage();
+    enquadrar();
   };
   im.src = url;
 }
-$('fileImg').onchange = e => loadImage(e.target.files[0]);
+// Abre o primeiro arquivo no editor e guarda os demais direto na biblioteca ('lib' ou 'gif')
+function abrirVarios(arquivos, abrir, k){
+  const lista = [...arquivos].filter(f => k === 'gif' ? f.type === 'image/gif' : f.type.startsWith('image/'));
+  if(!lista.length) return;
+  abrir(lista[0]);
+  for(const f of lista.slice(1))
+    api('/' + k + '/add?nome=' + encodeURIComponent(f.name), {method:'POST', body:f}).catch(() => {});
+}
+$('fileImg').onchange = e => { abrirVarios(e.target.files, loadImage, 'lib'); e.target.value = ''; };
 $('zoom').oninput = e => setZoom(+e.target.value);
+// Liga/desliga o modo estabilizado e reenquadra a imagem no modo escolhido
+$('estab').onchange = e => { estab = e.target.checked; enquadrar(); };
 $('rotPng').onclick = () => {
   const c = document.createElement('canvas');
   c.width = img.naturalHeight; c.height = img.naturalWidth;
   const k = c.getContext('2d');
   k.translate(c.width, 0); k.rotate(Math.PI / 2);
   k.drawImage(img, 0, 0);
+  girou = true; // a imagem deixou de ser idêntica ao arquivo original
   c.toBlob(b => {
     const im = new Image();
-    im.onload = () => { img = im; fitImage(); };
+    im.onload = () => { img = im; enquadrar(); };
     im.src = URL.createObjectURL(b);
   }, 'image/png');
 };
 $('stage').addEventListener('wheel', e => {
   if(!img) return; e.preventDefault();
-  setZoom(zoomV * (e.deltaY < 0 ? 1.08 : 1/1.08));
+  setZoom((estab ? zoomV : fs) * (e.deltaY < 0 ? 1.08 : 1/1.08));
 }, {passive:false});
 
 let drag = null;
 $('stage').addEventListener('pointerdown', e => {
   if(!img) return;
-  drag = {x:e.clientX, y:e.clientY, ox, oy};
+  drag = {x:e.clientX, y:e.clientY, ox, oy, fx, fy};
   $('stage').setPointerCapture(e.pointerId);
 });
 $('stage').addEventListener('pointermove', e => {
   if(!drag) return;
-  ox = drag.ox + (e.clientX - drag.x); oy = drag.oy + (e.clientY - drag.y);
-  clamp(); drawPng();
+  if(estab){
+    ox = drag.ox + (e.clientX - drag.x); oy = drag.oy + (e.clientY - drag.y);
+    clamp();
+  }else{
+    // o arrasto na prévia é convertido para px da barra real
+    const k = W / SW;
+    fx = drag.fx + (e.clientX - drag.x) * k; fy = drag.fy + (e.clientY - drag.y) * k;
+    limitarLivre();
+  }
+  drawPng();
 });
 $('stage').addEventListener('pointerup', () => drag = null);
 
@@ -288,6 +480,7 @@ async function guardarNaLib(){
   catch{ jaSalva = false; }
 }
 
+// Modo estabilizado: recorta a área visível na resolução original da imagem
 function cropBlob(cb){
   guardarNaLib();
   const sw = Math.round(SW / s), sh = Math.round(SH / s);
@@ -301,20 +494,52 @@ function cropBlob(cb){
   out.toBlob(cb, 'image/png');
 }
 
-$('exportPng').onclick = () => cropBlob(blob => {
+// Gera o PNG que vai para o Firefox. Estabilizado: recorte no formato da barra.
+// Livre: a imagem inteira, sem recorte e sem redução (se já for PNG e não tiver
+// sido girada, o arquivo original segue intacto)
+function gerarBlob(cb){
+  if(estab) return cropBlob(cb);
+  guardarNaLib();
+  if(!girou && imgFile && imgFile.type === 'image/png') return cb(imgFile);
+  const out = document.createElement('canvas');
+  out.width = img.naturalWidth; out.height = img.naturalHeight;
+  out.getContext('2d').drawImage(img, 0, 0);
+  out.toBlob(cb, 'image/png');
+}
+
+// Parâmetros enviados ao servidor. Estabilizado: sem parâmetros (o servidor usa
+// "cover"). Livre: tamanho e posição da imagem em px do CSS
+function paramsPng(){
+  if(estab) return 'tipo=png';
+  const {w, h} = dimsLivre();
+  const tam = `${Math.max(1, Math.round(w))}px ${Math.max(1, Math.round(h))}px`;
+  const pos = `${Math.round(fx)}px ${Math.round(fy)}px`;
+  return 'tipo=png&bs=' + encodeURIComponent(tam) + '&bp=' + encodeURIComponent(pos);
+}
+
+// Mostra no palco do GIF o mesmo fundo que foi gerado, na mesma posição e tamanho
+function prevFundo(url){
+  const st = $('gifStage').style;
+  st.backgroundImage = `url("${url}")`;
+  if(estab){
+    st.backgroundSize = 'cover'; st.backgroundPosition = '80% center';
+  }else{
+    const k = W / SW, {w, h} = dimsLivre();
+    st.backgroundSize = `${w / k}px ${h / k}px`;
+    st.backgroundPosition = `${fx / k}px ${fy / k}px`;
+  }
+}
+
+$('exportPng').onclick = () => gerarBlob(blob => {
   if(bgUrl) URL.revokeObjectURL(bgUrl);
   bgUrl = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = bgUrl; a.download = 'fundo.png'; a.click();
-  $('gifStage').style.backgroundImage = `url("${bgUrl}")`;
+  prevFundo(bgUrl);
 });
 
-$('applyPng').onclick = () => cropBlob(blob => {
-  if(bgUrl) URL.revokeObjectURL(bgUrl);
-  bgUrl = URL.createObjectURL(blob);
-  $('gifStage').style.backgroundImage = `url("${bgUrl}")`;
-  aplicar('tipo=png', blob);
-});
+$('applyPng').onclick = () => gerarBlob(blob =>
+  aplicar(paramsPng() + '&nome=' + encodeURIComponent(imgFile ? imgFile.name : 'imagem.png'), blob));
 
 /* ---------- GIF ---------- */
 const gifEl = $('gifEl');
@@ -336,16 +561,17 @@ function updateGif(keepRight){
   gifEl.style.left = gl + 'px'; gifEl.style.top = gt + 'px';
   writeCss(w);
 }
+// Converte a posição do GIF na prévia em valores de CSS (tamanho e posição só deste GIF)
 function writeCss(w){
   const k = W / SW;
   const right = Math.round((SW - gl - w) * k);
   const top = Math.round(gt * k);
   const pct = +$('gifSize').value;
-  cssSize = `auto ${Math.round(H * pct / 100)}px, cover`;
-  cssPos = `right ${right}px top ${top}px, 80% center`;
+  cssSize = `auto ${Math.round(H * pct / 100)}px`;
+  cssPos = `right ${right}px top ${top}px`;
   $('css').textContent =
-`background-size: ${cssSize} !important;
-background-position: ${cssPos} !important;`;
+`background-size: ${cssSize};
+background-position: ${cssPos};`;
   const wReal = Math.round(w * k), hReal = Math.round(SH * pct / 100 * k);
   const maxRight = W - wReal;
   $('limGif').textContent = `GIF com ${wReal} × ${hReal} px reais. Para ele ficar sempre dentro da barra (${W} × ${H} px), o "right" deve ficar entre ${Math.min(0, maxRight)} e ${Math.max(0, maxRight)} px e o "top" entre ${Math.min(0, H - hReal)} e ${Math.max(0, H - hReal)} px. Agora: right ${right}px, top ${top}px.`;
@@ -355,6 +581,7 @@ background-position: ${cssPos} !important;`;
 function loadGif(file, daLib){
   if(!file || file.type !== 'image/gif') return;
   gifFile = file; gifJaSalvo = !!daLib;
+  guardarGifNaLib(); // todo GIF aberto já vai para a biblioteca (se veio dela, não repete)
   gifEl.onload = () => {
     gifLoaded = true; gifEl.style.display = 'block'; $('emptyGif').hidden = true;
     gifEl.style.width = ''; gifEl.style.height = '';
@@ -363,17 +590,22 @@ function loadGif(file, daLib){
   };
   gifEl.src = URL.createObjectURL(file);
 }
-$('fileGif').onchange = e => loadGif(e.target.files[0]);
+$('fileGif').onchange = e => { abrirVarios(e.target.files, loadGif, 'gif'); e.target.value = ''; };
 $('gifSize').oninput = () => updateGif(true);
 
-$('applyGif').onclick = async () => {
+// Guarda o GIF aberto na biblioteca de GIFs (uma vez só por arquivo aberto)
+async function guardarGifNaLib(){
+  if(!gifFile || gifJaSalvo) return;
+  gifJaSalvo = true;
+  try{ await api('/gif/add?nome=' + encodeURIComponent(gifFile.name), {method:'POST', body:gifFile}); }
+  catch{ gifJaSalvo = false; }
+}
+
+$('applyGif').onclick = () => {
   if(!gifFile) return;
-  if(!gifJaSalvo){
-    gifJaSalvo = true;
-    try{ await api('/gif/add?nome=' + encodeURIComponent(gifFile.name), {method:'POST', body:gifFile}); }
-    catch{ gifJaSalvo = false; }
-  }
-  aplicar('tipo=gif&bs=' + encodeURIComponent(cssSize) + '&bp=' + encodeURIComponent(cssPos), gifFile);
+  guardarGifNaLib();
+  aplicar('tipo=gif&bs=' + encodeURIComponent(cssSize) + '&bp=' + encodeURIComponent(cssPos)
+    + '&nome=' + encodeURIComponent(gifFile.name), gifFile);
 };
 
 let gd = null;
@@ -441,22 +673,25 @@ $('fileLib').onchange = e => adicionarLib('lib', e);
 $('fileLibGif').onchange = e => adicionarLib('gif', e);
 
 /* ---------- Arrastar arquivos para as áreas ---------- */
-for(const [id, fn] of [['stage', loadImage], ['gifStage', loadGif]]){
+for(const [id, fn, k] of [['stage', loadImage, 'lib'], ['gifStage', loadGif, 'gif']]){
   const el = $(id);
   el.addEventListener('dragover', e => e.preventDefault());
-  el.addEventListener('drop', e => { e.preventDefault(); fn(e.dataTransfer.files[0]); });
+  el.addEventListener('drop', e => { e.preventDefault(); abrirVarios(e.dataTransfer.files, fn, k); });
 }
 
 /* ---------- Início ---------- */
+// Refaz o layout ao mudar largura/altura ou redimensionar a janela e reenquadra imagem e GIF
 function relayout(){
   layout();
-  if(img) fitImage();
+  if(img) enquadrar();
   if(gifLoaded){ const {w} = gifSize(); gl = SW - w; gt = 0; updateGif(); }
+  renderPrev();
 }
 Winp.onchange = Hinp.onchange = relayout;
 window.addEventListener('resize', relayout);
 Winp.value = screen.width;
 layout();
+carregarCamadas();
 </script>
 </body>
 </html>
