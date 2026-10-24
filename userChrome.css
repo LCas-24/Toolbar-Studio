@@ -1,0 +1,35 @@
+/* 1. Camada 1: GIF à direita | Camada 2: imagem preenchendo tudo */
+#navigator-toolbox {
+    background-image: url("fundo.gif"), url("fundo.png") !important;
+    background-size: auto 110px, cover !important;
+    background-position: right 1px top 0px, 80% center !important;
+    background-repeat: no-repeat, no-repeat !important;
+    background-color: #1a1a1a !important;
+    border: none !important;
+}
+
+/* 2. Barras transparentes */
+#TabsToolbar,
+#nav-bar,
+#PersonalToolbar {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+/* 3. Abas sem sombreado */
+.tabbrowser-tab .tab-stack,
+.tabbrowser-tab .tab-background {
+    background: transparent !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+}
+
+/* 4. Campo de pesquisa/URL levemente escurecido */
+#urlbar-background {
+    background-color: rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Compensa o GIF quando a barra de favoritos está escondida */
+#navigator-toolbox:has(#PersonalToolbar[collapsed="true"]) {
+    background-position: right calc(1078px + 50px) top 0px, 80% center !important;
+}
