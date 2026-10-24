@@ -6,14 +6,12 @@ import re
 import secrets
 import shutil
 import subprocess
-import sys
 import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, unquote
 
-WINDOWS = sys.platform.startswith("win")
 AQUI = os.path.dirname(os.path.abspath(__file__))
 HTML = os.path.join(AQUI, "cortador.html")
 LIB = os.path.join(AQUI, "biblioteca")
@@ -28,6 +26,7 @@ TIPOS = {
     ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
 }
 MAX_BYTES = 50 * 1024 * 1024  # limite por arquivo enviado
+MAX_CAMADAS = 20  # limite de imagens + GIFs aplicados ao mesmo tempo
 
 # Definidos ao iniciar (ver o final do arquivo)
 PROFILE_DIR = None
@@ -35,18 +34,15 @@ CHROME_DIR = None
 TOKEN = secrets.token_urlsafe(24)  # novo a cada execução
 HOSTS_OK = set()
 ORIGENS_OK = set()
+LOCK = threading.Lock()  # o servidor atende vários pedidos ao mesmo tempo; o estado é alterado um por vez
 
-CSS_MODELO = """/* 1. Camada 1: GIF | Camada 2: imagem preenchendo tudo */
-#navigator-toolbox {
-    background-image: url("fundo.gif"), url("fundo.png") !important;
-    background-size: auto 110px, cover !important;
-    background-position: right 0px top 0px, 80% center !important;
-    background-repeat: no-repeat, no-repeat !important;
-    background-color: #1a1a1a !important;
-    border: none !important;
-}
+# Marcas que delimitam, dentro do userChrome.css, o trecho gerenciado pela ferramenta.
+# Tudo fora delas (suas outras regras) nunca é tocado.
+MARC_INI = "/* TOOLBAR-STUDIO:INICIO (gerado pela ferramenta; nao edite entre as marcas) */"
+MARC_FIM = "/* TOOLBAR-STUDIO:FIM */"
 
-/* 2. Barras transparentes */
+# Resto do tema, escrito só quando o userChrome.css ainda não existe
+CSS_BASE = """/* 2. Barras transparentes */
 #TabsToolbar,
 #nav-bar,
 #PersonalToolbar {
@@ -68,35 +64,27 @@ CSS_MODELO = """/* 1. Camada 1: GIF | Camada 2: imagem preenchendo tudo */
 }
 """
 
-RE_TAMANHO = re.compile(r"auto \d{1,4}px, cover")
-RE_POSICAO = re.compile(r"right -?\d{1,5}px top -?\d{1,5}px, 80% center")
+# Valores aceitos para tamanho e posição de cada camada. Tudo que chega do painel
+# (e tudo que é lido do arquivo de estado) é validado aqui antes de ir para o CSS.
+# GIF: altura em px, encostado à direita
+RE_TAM_GIF = re.compile(r"auto \d{1,4}px")
+RE_POS_GIF = re.compile(r"right (-?\d{1,5})px top (-?\d{1,5})px")
+# Imagem: "cover" (estabilizada, preenche a barra) ou tamanho/posição livres em px
+RE_TAM_PNG = re.compile(r"cover|\d{1,5}px \d{1,5}px")
+RE_POS_PNG = re.compile(r"80% center|-?\d{1,6}px -?\d{1,6}px")
+RE_ARQ = re.compile(r"(ts_[0-9a-f]{8}|fundo)\.(png|gif)")
+RE_ID = re.compile(r"[0-9a-f]{8}|legado-png|legado-gif")
 RESERVADOS = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
 
 
 # ---------- Perfil do Firefox ----------
-def pastas_base():
-    if WINDOWS:
-        return [os.path.join(os.environ.get("APPDATA", ""), "Mozilla", "Firefox")]
-    home = os.path.expanduser("~")
-    normal = os.path.join(home, ".mozilla", "firefox")
-    snap = os.path.join(home, "snap", "firefox", "common", ".mozilla", "firefox")
-    flatpak = os.path.join(home, ".var", "app", "org.mozilla.firefox", ".mozilla", "firefox")
-    exe = shutil.which("firefox") or ""
-    if exe.startswith("/snap"):
-        return [snap, normal, flatpak]
-    if not exe and shutil.which("flatpak"):
-        return [flatpak, normal, snap]
-    return [normal, snap, flatpak]
-
-
 def achar_perfil():
     env = os.environ.get("FIREFOX_PROFILE", "").strip().strip('"')
     if env and os.path.isdir(env):
         return os.path.abspath(env)
-    for base in pastas_base():
-        ini = os.path.join(base, "profiles.ini")
-        if not os.path.isfile(ini):
-            continue
+    base = os.path.join(os.environ.get("APPDATA", ""), "Mozilla", "Firefox")
+    ini = os.path.join(base, "profiles.ini")
+    if os.path.isfile(ini):
         cp = configparser.ConfigParser(interpolation=None, strict=False)
         try:
             cp.read(ini, encoding="utf-8")
@@ -177,92 +165,189 @@ def gravar(caminho, dados):
     os.replace(tmp, caminho)
 
 
+def ja_na_pasta(pasta, exts, dados):
+    """True se a pasta já tem um arquivo com exatamente o mesmo conteúdo.
+    Evita a biblioteca ficar com cópias quando a mesma imagem é aberta várias vezes."""
+    for nome in os.listdir(pasta):
+        caminho = os.path.join(pasta, nome)
+        if nome.lower().endswith(exts) and os.path.isfile(caminho) and os.path.getsize(caminho) == len(dados):
+            with open(caminho, "rb") as f:
+                if f.read() == dados:
+                    return True
+    return False
+
+
 # ---------- Firefox ----------
 def achar_firefox():
-    """Devolve o comando que abre o Firefox (lista) ou None."""
-    if WINDOWS:
-        candidatos = [
-            shutil.which("firefox"),
-            r"C:\Program Files\Mozilla Firefox\firefox.exe",
-            r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe",
-        ]
-        for c in candidatos:
-            if c and os.path.exists(c):
-                return [c]
-        return None
-    for c in (shutil.which("firefox"), "/snap/bin/firefox"):
+    candidatos = [
+        shutil.which("firefox"),
+        r"C:\Program Files\Mozilla Firefox\firefox.exe",
+        r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe",
+    ]
+    for c in candidatos:
         if c and os.path.exists(c):
-            return [c]
-    if shutil.which("flatpak"):
-        r = subprocess.run(["flatpak", "info", "org.mozilla.firefox"], capture_output=True)
-        if r.returncode == 0:
-            return ["flatpak", "run", "org.mozilla.firefox"]
+            return c
     return None
 
 
 def firefox_aberto():
-    if WINDOWS:
-        r = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq firefox.exe"],
-            capture_output=True,
-        )
-        return b"firefox.exe" in r.stdout.lower()
-    try:
-        return any(
-            subprocess.run(["pgrep", "-x", nome], capture_output=True).returncode == 0
-            for nome in ("firefox", "firefox-bin")
-        )
-    except OSError:
-        return False
-
-
-def fechar_firefox(forcar=False):
-    try:
-        if WINDOWS:
-            subprocess.run(["taskkill"] + (["/F"] if forcar else []) + ["/IM", "firefox.exe"], capture_output=True)
-        else:
-            for nome in ("firefox", "firefox-bin"):
-                subprocess.run(["pkill"] + (["-9"] if forcar else []) + ["-x", nome], capture_output=True)
-    except OSError:
-        pass
+    r = subprocess.run(
+        ["tasklist", "/FI", "IMAGENAME eq firefox.exe"],
+        capture_output=True,
+    )
+    return b"firefox.exe" in r.stdout.lower()
 
 
 def reiniciar_firefox():
-    cmd = achar_firefox()
-    if not cmd:
-        print("Não achei o Firefox. Abra-o manualmente.")
+    exe = achar_firefox()
+    if not exe:
+        print("Não achei o firefox.exe. Abra o Firefox manualmente.")
         return
     # fecha de forma normal (preserva a sessão); força só se travar
-    fechar_firefox()
+    subprocess.run(["taskkill", "/IM", "firefox.exe"], capture_output=True)
     for _ in range(20):
         time.sleep(0.5)
         if not firefox_aberto():
             break
     else:
-        fechar_firefox(forcar=True)
+        subprocess.run(["taskkill", "/F", "/IM", "firefox.exe"], capture_output=True)
         time.sleep(1)
-    extra = {} if WINDOWS else {"start_new_session": True, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
-    subprocess.Popen(cmd + ["-profile", PROFILE_DIR], **extra)
+    subprocess.Popen([exe, "-profile", PROFILE_DIR])
 
 
-def garantir_css():
+# ---------- Camadas (várias imagens e GIFs ao mesmo tempo) ----------
+# O estado fica em toolbar-studio.json, dentro da pasta chrome do perfil:
+# {"offset": px, "camadas": [{"id", "tipo": "png"|"gif", "arq", "nome", "bs", "bp"}, ...]}
+# As camadas ficam na ordem em que foram adicionadas; a ordem de empilhamento
+# no CSS é calculada em ordenadas().
+def camada_valida(c):
+    """Confere o formato de uma camada antes de usar o nome do arquivo e os
+    valores de tamanho/posição no CSS."""
+    if not isinstance(c, dict):
+        return False
+    tipo, arq, cid, bs, bp = (c.get(k) for k in ("tipo", "arq", "id", "bs", "bp"))
+    if tipo not in ("png", "gif") or not all(isinstance(v, str) for v in (arq, cid, bs, bp)):
+        return False
+    if not RE_ARQ.fullmatch(arq) or not arq.endswith("." + tipo) or not RE_ID.fullmatch(cid):
+        return False
+    if tipo == "gif":
+        return bool(RE_TAM_GIF.fullmatch(bs) and RE_POS_GIF.fullmatch(bp))
+    return bool(RE_TAM_PNG.fullmatch(bs) and RE_POS_PNG.fullmatch(bp))
+
+
+def ordenadas(camadas):
+    """Ordem de empilhamento do CSS (a primeira fica por cima): primeiro os GIFs,
+    depois as imagens, e dentro de cada grupo a mais recente por cima."""
+    gifs = [c for c in camadas if c["tipo"] == "gif"][::-1]
+    imgs = [c for c in camadas if c["tipo"] == "png"][::-1]
+    return gifs + imgs
+
+
+def importar_legado():
+    """Primeira execução desta versão: aproveita o fundo.png / fundo.gif e os
+    valores do userChrome.css antigo, para nada sumir da barra."""
+    estado = {"offset": 0, "camadas": []}
+    try:
+        with open(os.path.join(CHROME_DIR, "userChrome.css"), encoding="utf-8") as f:
+            css = f.read()
+    except OSError:
+        css = ""
+    if os.path.isfile(os.path.join(CHROME_DIR, "fundo.png")):
+        estado["camadas"].append({"id": "legado-png", "tipo": "png", "arq": "fundo.png",
+                                  "nome": "fundo.png", "bs": "cover", "bp": "80% center"})
+    if os.path.isfile(os.path.join(CHROME_DIR, "fundo.gif")):
+        m_tam = re.search(r"background-size:\s*auto (\d{1,4})px", css)
+        m_pos = re.search(r"right (-?\d{1,5})px top (-?\d{1,5})px", css)
+        estado["camadas"].append({
+            "id": "legado-gif", "tipo": "gif", "arq": "fundo.gif", "nome": "fundo.gif",
+            "bs": f"auto {m_tam.group(1)}px" if m_tam else "auto 110px",
+            "bp": f"right {m_pos.group(1)}px top {m_pos.group(2)}px" if m_pos else "right 0px top 0px",
+        })
+    # deslocamento que você antes colocava à mão: right calc(1078px + 50px)
+    m_off = re.search(r"calc\(\s*-?\d+px\s*\+\s*(\d{1,4})px\s*\)", css)
+    if m_off:
+        estado["offset"] = min(3000, int(m_off.group(1)))
+    estado["camadas"] = [c for c in estado["camadas"] if camada_valida(c)]
+    return estado
+
+
+def carregar_estado():
+    try:
+        with open(os.path.join(CHROME_DIR, "toolbar-studio.json"), encoding="utf-8") as f:
+            dados = json.load(f)
+    except (OSError, ValueError):
+        dados = None
+    if not isinstance(dados, dict):
+        return importar_legado()
+    offset = dados.get("offset")
+    if not isinstance(offset, int) or isinstance(offset, bool) or not 0 <= offset <= 3000:
+        offset = 0
+    camadas = dados.get("camadas")
+    camadas = [c for c in camadas if camada_valida(c)] if isinstance(camadas, list) else []
+    return {"offset": offset, "camadas": camadas}
+
+
+def gerar_bloco(estado):
+    """Monta o trecho do userChrome.css com todas as camadas, já na ordem de empilhamento."""
+    camadas = ordenadas(estado["camadas"])
+    linhas = ["#navigator-toolbox {"]
+    if camadas:
+        n = len(camadas)
+        linhas.append("    background-image: " + ", ".join(f'url("{c["arq"]}")' for c in camadas) + " !important;")
+        linhas.append("    background-size: " + ", ".join(c["bs"] for c in camadas) + " !important;")
+        linhas.append("    background-position: " + ", ".join(c["bp"] for c in camadas) + " !important;")
+        linhas.append("    background-repeat: " + ", ".join(["no-repeat"] * n) + " !important;")
+    linhas += ["    background-color: #1a1a1a !important;", "    border: none !important;", "}"]
+    # Com a barra de favoritos escondida, os GIFs são deslocados para a esquerda
+    off = estado["offset"]
+    if off and any(c["tipo"] == "gif" for c in camadas):
+        posicoes = []
+        for c in camadas:
+            m = RE_POS_GIF.fullmatch(c["bp"]) if c["tipo"] == "gif" else None
+            posicoes.append(f"right calc({m.group(1)}px + {off}px) top {m.group(2)}px" if m else c["bp"])
+        linhas += ["", '#navigator-toolbox:has(#PersonalToolbar[collapsed="true"]) {',
+                   "    background-position: " + ", ".join(posicoes) + " !important;", "}"]
+    return MARC_INI + "\n" + "\n".join(linhas) + "\n" + MARC_FIM + "\n"
+
+
+def escrever_css(estado):
+    """Grava o trecho gerenciado no userChrome.css sem mexer no resto do arquivo."""
     caminho = os.path.join(CHROME_DIR, "userChrome.css")
+    bloco = gerar_bloco(estado)
     if not os.path.exists(caminho):
         os.makedirs(CHROME_DIR, exist_ok=True)
-        with open(caminho, "w", encoding="utf-8") as f:
-            f.write(CSS_MODELO)
-    return caminho
-
-
-def ajustar_css(tamanho, posicao):
-    caminho = garantir_css()
-    with open(caminho, encoding="utf-8") as f:
-        txt = f.read()
-    shutil.copy(caminho, caminho + ".bak")
-    txt = re.sub(r"background-size:[^;]*;", lambda m: f"background-size: {tamanho} !important;", txt, count=1)
-    txt = re.sub(r"background-position:[^;]*;", lambda m: f"background-position: {posicao} !important;", txt, count=1)
+        txt = bloco + "\n" + CSS_BASE
+    else:
+        with open(caminho, encoding="utf-8") as f:
+            txt = f.read()
+        shutil.copy(caminho, caminho + ".bak")
+        ini, fim = txt.find(MARC_INI), txt.find(MARC_FIM)
+        if ini != -1 and fim > ini:
+            txt = txt[:ini] + bloco.rstrip("\n") + txt[fim + len(MARC_FIM):]
+        else:
+            # Arquivo da versão antiga: troca a regra do fundo pelo trecho gerenciado
+            # e apaga a regra manual da barra de favoritos escondida (agora gerada aqui)
+            txt = re.sub(r'#navigator-toolbox:has\(#PersonalToolbar\[collapsed="true"\]\)\s*\{[^}]*\}\s*', "", txt)
+            txt, n = re.subn(r"#navigator-toolbox\s*\{[^}]*background-image[^}]*\}",
+                             lambda m: bloco.rstrip("\n"), txt, count=1)
+            if n == 0:
+                txt = bloco + "\n" + txt
     with open(caminho, "w", encoding="utf-8") as f:
         f.write(txt)
+
+
+def aplicar_estado(estado):
+    """Salva o estado e regenera o CSS (chamar com LOCK preso)."""
+    os.makedirs(CHROME_DIR, exist_ok=True)
+    gravar(os.path.join(CHROME_DIR, "toolbar-studio.json"), json.dumps(estado, indent=1).encode("utf-8"))
+    escrever_css(estado)
+
+
+def apagar_arquivo_camada(c):
+    try:
+        os.remove(os.path.join(CHROME_DIR, c["arq"]))
+    except OSError:
+        pass
 
 
 # ---------- Servidor ----------
@@ -322,6 +407,19 @@ class Handler(BaseHTTPRequestHandler):
             with open(HTML, "rb") as f:
                 pagina = f.read().replace(b"__TOKEN__", TOKEN.encode())
             return self.responder(200, pagina, "text/html; charset=utf-8")
+        if caminho == "/estado":
+            with LOCK:
+                return self.responder(200, json.dumps(carregar_estado()).encode())
+        if caminho.startswith("/camada/"):
+            # só entrega arquivos que são camadas do estado atual
+            arq = unquote(caminho[len("/camada/"):])
+            with LOCK:
+                ok = any(c["arq"] == arq for c in carregar_estado()["camadas"])
+            alvo = os.path.join(CHROME_DIR, arq)
+            if not ok or not os.path.isfile(alvo):
+                return self.responder(404, b"{}")
+            with open(alvo, "rb") as f:
+                return self.responder(200, f.read(), TIPOS.get(os.path.splitext(arq)[1].lower(), "application/octet-stream"))
         for k, (pasta, exts) in PASTAS.items():
             if caminho == "/" + k:
                 os.makedirs(pasta, exist_ok=True)
@@ -366,6 +464,8 @@ class Handler(BaseHTTPRequestHandler):
             dados = self.ler_corpo()
             if dados is None or not assinatura_ok(ext, dados):
                 return self.msg(400, "Arquivo inválido ou grande demais.")
+            if ja_na_pasta(pasta, exts, dados):
+                return self.msg(200, "Já estava na biblioteca.")
             base, _ = os.path.splitext(nome)
             n = 1
             while os.path.exists(alvo):
@@ -377,6 +477,78 @@ class Handler(BaseHTTPRequestHandler):
             return self.msg(500, "Erro ao mexer nos arquivos da biblioteca.")
         self.msg(200, "Adicionada.")
 
+    def camada_add(self, q):
+        """Adiciona uma imagem ou GIF como nova camada, sem apagar as que já existem."""
+        tipo = q.get("tipo", [""])[0]
+        if tipo not in ("png", "gif"):
+            return self.msg(400, "Tipo inválido.")
+        dados = self.ler_corpo()
+        if dados is None or not assinatura_ok("." + tipo, dados):
+            return self.msg(400, "Arquivo inválido ou grande demais.")
+        bs = q.get("bs", [""])[0]
+        bp = q.get("bp", [""])[0]
+        if tipo == "png":
+            # sem parâmetros = imagem estabilizada (preenche a barra)
+            bs = bs or "cover"
+            bp = bp or "80% center"
+        cid = secrets.token_hex(4)
+        camada = {"id": cid, "tipo": tipo, "arq": f"ts_{cid}.{tipo}",
+                  "nome": limpar_nome(q.get("nome", [""])[0])[:100], "bs": bs, "bp": bp}
+        if not camada_valida(camada):
+            return self.msg(400, "Posição inválida.")
+        try:
+            with LOCK:
+                estado = carregar_estado()
+                if len(estado["camadas"]) >= MAX_CAMADAS:
+                    return self.msg(400, f"Limite de {MAX_CAMADAS} camadas. Remova alguma antes.")
+                os.makedirs(CHROME_DIR, exist_ok=True)
+                gravar(os.path.join(CHROME_DIR, camada["arq"]), dados)
+                estado["camadas"].append(camada)
+                aplicar_estado(estado)
+        except OSError as e:
+            print("Erro de arquivo:", type(e).__name__)
+            return self.msg(500, "Erro ao gravar na pasta do perfil do Firefox.")
+        self.msg(200, "Camada adicionada. O Firefox vai reiniciar agora.")
+        threading.Thread(target=reiniciar_firefox, daemon=True).start()
+
+    def camada_del(self, q):
+        """Remove uma camada (ou todas, com id=todas) e o arquivo dela."""
+        cid = q.get("id", [""])[0]
+        try:
+            with LOCK:
+                estado = carregar_estado()
+                if cid == "todas":
+                    alvos = list(estado["camadas"])
+                else:
+                    alvos = [c for c in estado["camadas"] if c["id"] == cid]
+                if not alvos:
+                    return self.msg(404, "Camada não encontrada.")
+                estado["camadas"] = [c for c in estado["camadas"] if c not in alvos]
+                aplicar_estado(estado)
+                for c in alvos:
+                    apagar_arquivo_camada(c)
+        except OSError as e:
+            print("Erro de arquivo:", type(e).__name__)
+            return self.msg(500, "Erro ao remover a camada.")
+        self.msg(200, "Removida. O Firefox vai reiniciar agora.")
+        threading.Thread(target=reiniciar_firefox, daemon=True).start()
+
+    def definir_offset(self, q):
+        """Deslocamento dos GIFs quando a barra de favoritos está escondida."""
+        bruto = q.get("px", [""])[0]
+        if not re.fullmatch(r"\d{1,4}", bruto) or int(bruto) > 3000:
+            return self.msg(400, "Valor inválido.")
+        try:
+            with LOCK:
+                estado = carregar_estado()
+                estado["offset"] = int(bruto)
+                aplicar_estado(estado)
+        except OSError as e:
+            print("Erro de arquivo:", type(e).__name__)
+            return self.msg(500, "Erro ao gravar na pasta do perfil do Firefox.")
+        self.msg(200, "Deslocamento salvo. O Firefox vai reiniciar agora.")
+        threading.Thread(target=reiniciar_firefox, daemon=True).start()
+
     def do_POST(self):
         url = urlparse(self.path)
         q = parse_qs(url.query)
@@ -385,61 +557,21 @@ class Handler(BaseHTTPRequestHandler):
         partes = url.path.strip("/").split("/")
         if len(partes) == 2 and partes[0] in PASTAS and partes[1] in ("add", "del", "fav"):
             return self.lib_post(q, partes[0], partes[1])
-        if url.path not in ("/apply", "/remover"):
-            return self.responder(404, b"{}")
-        tipo = q.get("tipo", [""])[0]
-        if tipo not in ("png", "gif"):
-            return self.msg(400, "Tipo inválido.")
-        if url.path == "/remover":
-            alvo = os.path.join(CHROME_DIR, f"fundo.{tipo}")
-            try:
-                if not os.path.exists(alvo):
-                    return self.msg(200, f"Não existe fundo.{tipo} para remover.")
-                os.remove(alvo)
-            except OSError as e:
-                print("Erro de arquivo:", type(e).__name__)
-                return self.msg(500, "Erro ao remover o arquivo.")
-            self.msg(200, f"fundo.{tipo} removido. O Firefox vai reiniciar agora.")
-            threading.Thread(target=reiniciar_firefox, daemon=True).start()
-            return
-        dados = self.ler_corpo()
-        if dados is None or not assinatura_ok("." + tipo, dados):
-            return self.msg(400, "Arquivo inválido ou grande demais.")
-        bs = q.get("bs", ["auto 110px, cover"])[0]
-        bp = q.get("bp", ["right 0px top 0px, 80% center"])[0]
-        if tipo == "gif" and not (RE_TAMANHO.fullmatch(bs) and RE_POSICAO.fullmatch(bp)):
-            return self.msg(400, "Posição inválida.")
-        try:
-            garantir_css()
-            gravar(os.path.join(CHROME_DIR, f"fundo.{tipo}"), dados)
-            if tipo == "gif":
-                ajustar_css(bs, bp)
-        except OSError as e:
-            print("Erro de arquivo:", type(e).__name__)
-            return self.msg(500, "Erro ao gravar na pasta do perfil do Firefox.")
-        self.msg(200, "Aplicado. O Firefox vai reiniciar agora.")
-        threading.Thread(target=reiniciar_firefox, daemon=True).start()
+        if url.path == "/camada/add":
+            return self.camada_add(q)
+        if url.path == "/camada/del":
+            return self.camada_del(q)
+        if url.path == "/offset":
+            return self.definir_offset(q)
+        self.responder(404, b"{}")
 
 
 def abrir_navegador(url):
-    # Outro navegador que não o Firefox, para a página não fechar junto com ele
-    if WINDOWS:
-        try:
-            subprocess.Popen(["cmd", "/c", "start", "msedge", url])
-            return
-        except OSError:
-            pass
-    else:
-        for nome in ("microsoft-edge", "microsoft-edge-stable", "google-chrome", "google-chrome-stable",
-                     "chromium", "chromium-browser", "brave-browser", "epiphany", "falkon"):
-            exe = shutil.which(nome)
-            if exe:
-                subprocess.Popen([exe, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                 start_new_session=True)
-                return
-        print("Não achei outro navegador além do Firefox. Se a página abrir nele, ela fecha quando o Firefox")
-        print("reiniciar; é só abrir de novo pelo endereço acima.")
-    webbrowser.open(url)
+    # Edge, para a página não fechar junto com o Firefox
+    try:
+        subprocess.Popen(["cmd", "/c", "start", "msedge", url])
+    except OSError:
+        webbrowser.open(url)
 
 
 if __name__ == "__main__":
