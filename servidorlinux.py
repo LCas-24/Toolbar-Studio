@@ -81,9 +81,14 @@ RE_ID = re.compile(r"[0-9a-f]{8}|legado-png|legado-gif")
 # aba e url também têm opacidade (0 a 100), porque costumam ser translúcidas.
 RE_COR = re.compile(r"#[0-9a-fA-F]{6}")
 RE_ID_COR = re.compile(r"[0-9a-f]{8}")
-CAMPOS_COR = ("fundo", "aba", "url", "texto", "icones", "destaque")
-CORES_PADRAO = {"fundo": None, "aba": None, "abaAlfa": 60, "url": None, "urlAlfa": 50,
-                "texto": None, "icones": None, "destaque": None}
+CAMPOS_COR = ("fundo", "fundoAbas", "fundoNav", "divisoria", "aba", "abaBorda", "url", "texto", "icones", "destaque")
+CAMPOS_ALFA = ("fundoAbasAlfa", "fundoNavAlfa", "abaAlfa", "urlAlfa")  # opacidade, 0 a 100
+CAMPOS_LARG = ("divisoriaLarg", "abaBordaLarg")  # espessura em px, 0 a 6
+FORMAS = {"reto": "0px", "suave": "6px", "pilula": "999px"}  # formato das abas -> border-radius
+CORES_PADRAO = {"fundo": None, "fundoAbas": None, "fundoAbasAlfa": 100, "fundoNav": None, "fundoNavAlfa": 100,
+                "divisoria": None, "divisoriaLarg": 1, "aba": None, "abaAlfa": 60,
+                "abaBorda": None, "abaBordaLarg": 1, "forma": None,
+                "url": None, "urlAlfa": 50, "texto": None, "icones": None, "destaque": None}
 COR_FUNDO_PADRAO = "#1a1a1a"
 RESERVADOS = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
 
@@ -355,10 +360,16 @@ def normalizar_cores(d):
         v = d.get(k)
         if isinstance(v, str) and RE_COR.fullmatch(v):
             out[k] = v.lower()
-    for k in ("abaAlfa", "urlAlfa"):
+    for k in CAMPOS_ALFA:
         v = d.get(k)
         if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 100:
             out[k] = v
+    for k in CAMPOS_LARG:
+        v = d.get(k)
+        if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 6:
+            out[k] = v
+    if d.get("forma") in FORMAS:
+        out["forma"] = d["forma"]
     return out
 
 
@@ -440,6 +451,33 @@ def regras_cores(c):
         raiz += [f"--toolbar-field-background-color: {cor} !important;",
                  f"--toolbar-field-focus-background-color: {cor} !important;"]
         regras.append(f"#navigator-toolbox #urlbar-background {{\n    background-color: {cor} !important;\n}}")
+    if c["fundoAbas"]:
+        regras.append("#navigator-toolbox #TabsToolbar {\n"
+                      f"    background-color: {rgba(c['fundoAbas'], c['fundoAbasAlfa'])} !important;\n}}")
+    if c["fundoNav"]:
+        regras.append("#navigator-toolbox #nav-bar {\n"
+                      f"    background-color: {rgba(c['fundoNav'], c['fundoNavAlfa'])} !important;\n}}")
+    if c["divisoria"] or c["divisoriaLarg"] != 1:
+        w = c["divisoriaLarg"]
+        cor = c["divisoria"] or "rgba(128, 128, 128, 0.4)"
+        linha = "none" if w == 0 else f"{w}px solid {cor}"
+        regras.append("#navigator-toolbox #nav-bar {\n"
+                      f"    border-top: {linha} !important;\n    box-shadow: none !important;\n}}")
+    if c["forma"]:
+        r = FORMAS[c["forma"]]
+        raiz.append(f"--tab-border-radius: {r} !important;")
+        regras.append("#navigator-toolbox .tab-background {\n"
+                      f"    border-radius: {r} !important;\n}}")
+    if c["abaBorda"] or c["abaBordaLarg"] != 1:
+        w = c["abaBordaLarg"]
+        cor = c["abaBorda"] or "rgba(255, 255, 255, 0.35)"
+        if w == 0:
+            borda = "    outline: none !important;\n"
+        else:
+            raiz.append(f"--tab-selected-outline-color: {cor} !important;")
+            borda = f"    outline: {w}px solid {cor} !important;\n    outline-offset: -{w}px !important;\n"
+        regras.append("#navigator-toolbox .tabbrowser-tab[selected] .tab-background, "
+                      "#navigator-toolbox .tab-background[selected] {\n" + borda + "}")
     saida = []
     if raiz:
         saida.append(":root {\n    " + "\n    ".join(raiz) + "\n}")
