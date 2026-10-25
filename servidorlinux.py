@@ -18,6 +18,7 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 HTML = os.path.join(AQUI, "cortador.html")
 LIB = os.path.join(AQUI, "biblioteca")
 LIB_GIF = os.path.join(AQUI, "biblioteca_gif")
+LIB_CORES = os.path.join(AQUI, "biblioteca_cores.json")
 EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 PASTAS = {
     "lib": (LIB, EXTS),
@@ -76,6 +77,14 @@ RE_TAM_PNG = re.compile(r"cover|\d{1,5}px \d{1,5}px")
 RE_POS_PNG = re.compile(r"80% center|-?\d{1,6}px -?\d{1,6}px")
 RE_ARQ = re.compile(r"(ts_[0-9a-f]{8}|fundo)\.(png|gif)")
 RE_ID = re.compile(r"[0-9a-f]{8}|legado-png|legado-gif")
+# Cores do tema (aba Cores do painel). Cada cor é "#rrggbb" ou None (= mantém o padrão do Firefox).
+# aba e url também têm opacidade (0 a 100), porque costumam ser translúcidas.
+RE_COR = re.compile(r"#[0-9a-fA-F]{6}")
+RE_ID_COR = re.compile(r"[0-9a-f]{8}")
+CAMPOS_COR = ("fundo", "aba", "url", "texto", "icones", "destaque")
+CORES_PADRAO = {"fundo": None, "aba": None, "abaAlfa": 60, "url": None, "urlAlfa": 50,
+                "texto": None, "icones": None, "destaque": None}
+COR_FUNDO_PADRAO = "#1a1a1a"
 RESERVADOS = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
 
 
@@ -294,7 +303,7 @@ def ordenadas(camadas):
 def importar_legado():
     """Primeira execução desta versão: aproveita o fundo.png / fundo.gif e os
     valores do userChrome.css antigo, para nada sumir da barra."""
-    estado = {"offset": 0, "camadas": []}
+    estado = {"offset": 0, "camadas": [], "cores": dict(CORES_PADRAO)}
     try:
         with open(os.path.join(CHROME_DIR, "userChrome.css"), encoding="utf-8") as f:
             css = f.read()
@@ -332,7 +341,109 @@ def carregar_estado():
         offset = 0
     camadas = dados.get("camadas")
     camadas = [c for c in camadas if camada_valida(c)] if isinstance(camadas, list) else []
-    return {"offset": offset, "camadas": camadas}
+    return {"offset": offset, "camadas": camadas, "cores": normalizar_cores(dados.get("cores"))}
+
+
+def normalizar_cores(d):
+    """Aceita só cores no formato #rrggbb e opacidades de 0 a 100; qualquer outra coisa
+    volta ao padrão. Como o resultado vai direto para o CSS, é aqui que se garante que
+    nada além de uma cor válida chega lá."""
+    out = dict(CORES_PADRAO)
+    if not isinstance(d, dict):
+        return out
+    for k in CAMPOS_COR:
+        v = d.get(k)
+        if isinstance(v, str) and RE_COR.fullmatch(v):
+            out[k] = v.lower()
+    for k in ("abaAlfa", "urlAlfa"):
+        v = d.get(k)
+        if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 100:
+            out[k] = v
+    return out
+
+
+# ---------- Biblioteca de cores ----------
+def ler_lib_cores():
+    try:
+        with open(LIB_CORES, encoding="utf-8") as f:
+            dados = json.load(f)
+    except (OSError, ValueError):
+        return []
+    itens = []
+    if isinstance(dados, list):
+        for it in dados:
+            if (isinstance(it, dict) and isinstance(it.get("id"), str)
+                    and RE_ID_COR.fullmatch(it["id"]) and isinstance(it.get("nome"), str)):
+                itens.append({"id": it["id"], "nome": it["nome"][:40], "fav": it.get("fav") is True,
+                              "cores": normalizar_cores(it.get("cores"))})
+    return itens
+
+
+def gravar_lib_cores(itens):
+    gravar(LIB_CORES, json.dumps(itens, indent=1).encode("utf-8"))
+
+
+def guardar_esquema(nome, cores):
+    """Guarda o esquema aplicado. Se já existe um com as mesmas cores, só atualiza o nome."""
+    itens = ler_lib_cores()
+    for it in itens:
+        if it["cores"] == cores:
+            if nome:
+                it["nome"] = nome
+            return gravar_lib_cores(itens)
+    itens.append({"id": secrets.token_hex(4), "nome": nome or f"Esquema {len(itens) + 1}",
+                  "fav": False, "cores": cores})
+    gravar_lib_cores(itens)
+
+
+def rgba(hexcor, alfa):
+    """Converte #rrggbb + opacidade (0 a 100) em rgba(...) para o CSS."""
+    n = int(hexcor[1:], 16)
+    return f"rgba({n >> 16 & 255}, {n >> 8 & 255}, {n & 255}, {alfa / 100:g})"
+
+
+def regras_cores(c):
+    """Regras do userChrome.css para as cores da aba Cores. Só gera o que foi
+    personalizado. Os seletores começam por #navigator-toolbox para vencer as regras do
+    tema base (que ficam depois do trecho gerenciado no arquivo)."""
+    raiz, regras = [], []  # raiz = variáveis do tema do Firefox; regras = seletores
+    if c["texto"]:
+        t = c["texto"]
+        raiz += [f"--toolbar-color: {t} !important;", f"--lwt-text-color: {t} !important;",
+                 f"--tab-selected-textcolor: {t} !important;", f"--lwt-tab-text: {t} !important;",
+                 f"--toolbar-field-color: {t} !important;", f"--toolbar-field-focus-color: {t} !important;"]
+        regras.append("#navigator-toolbox, #navigator-toolbox .tab-label, "
+                      "#navigator-toolbox .bookmark-item .toolbarbutton-text, #navigator-toolbox #urlbar-input {\n"
+                      f"    color: {t} !important;\n}}")
+    if c["icones"]:
+        i = c["icones"]
+        raiz += [f"--toolbarbutton-icon-fill: {i} !important;", f"--lwt-toolbarbutton-icon-fill: {i} !important;"]
+        regras.append("#navigator-toolbox toolbarbutton, #navigator-toolbox .urlbar-icon, "
+                      "#navigator-toolbox .tab-close-button, #navigator-toolbox #star-button-box {\n"
+                      f"    fill: {i} !important;\n    -moz-context-properties: fill, fill-opacity !important;\n}}")
+    if c["destaque"]:
+        d = c["destaque"]
+        raiz += [f"--toolbarbutton-icon-fill-attention: {d} !important;",
+                 f"--lwt-toolbarbutton-icon-fill-attention: {d} !important;"]
+        regras.append("#navigator-toolbox #star-button-box[starred], #navigator-toolbox #star-button[starred], "
+                      "#navigator-toolbox #star-button-box[starred] #star-button {\n"
+                      f"    fill: {d} !important;\n    color: {d} !important;\n"
+                      "    -moz-context-properties: fill, fill-opacity !important;\n}")
+    if c["aba"]:
+        cor = rgba(c["aba"], c["abaAlfa"])
+        raiz.append(f"--tab-selected-bgcolor: {cor} !important;")
+        regras.append("#navigator-toolbox .tabbrowser-tab[selected] .tab-background, "
+                      "#navigator-toolbox .tab-background[selected] {\n"
+                      f"    background-color: {cor} !important;\n    background-image: none !important;\n}}")
+    if c["url"]:
+        cor = rgba(c["url"], c["urlAlfa"])
+        raiz += [f"--toolbar-field-background-color: {cor} !important;",
+                 f"--toolbar-field-focus-background-color: {cor} !important;"]
+        regras.append(f"#navigator-toolbox #urlbar-background {{\n    background-color: {cor} !important;\n}}")
+    saida = []
+    if raiz:
+        saida.append(":root {\n    " + "\n    ".join(raiz) + "\n}")
+    return saida + regras
 
 
 def gerar_bloco(estado):
@@ -345,7 +456,9 @@ def gerar_bloco(estado):
         linhas.append("    background-size: " + ", ".join(c["bs"] for c in camadas) + " !important;")
         linhas.append("    background-position: " + ", ".join(c["bp"] for c in camadas) + " !important;")
         linhas.append("    background-repeat: " + ", ".join(["no-repeat"] * n) + " !important;")
-    linhas += ["    background-color: #1a1a1a !important;", "    border: none !important;", "}"]
+    cores = normalizar_cores(estado.get("cores"))
+    linhas += [f"    background-color: {cores['fundo'] or COR_FUNDO_PADRAO} !important;",
+               "    border: none !important;", "}"]
     # Com a barra de favoritos escondida, os GIFs são deslocados para a esquerda
     off = estado["offset"]
     if off and any(c["tipo"] == "gif" for c in camadas):
@@ -355,6 +468,9 @@ def gerar_bloco(estado):
             posicoes.append(f"right calc({m.group(1)}px + {off}px) top {m.group(2)}px" if m else c["bp"])
         linhas += ["", '#navigator-toolbox:has(#PersonalToolbar[collapsed="true"]) {',
                    "    background-position: " + ", ".join(posicoes) + " !important;", "}"]
+    extras = regras_cores(cores)
+    if extras:
+        linhas += ["", "/* Cores personalizadas (aba Cores do painel) */"] + ["\n".join(extras)]
     return MARC_INI + "\n" + "\n".join(linhas) + "\n" + MARC_FIM + "\n"
 
 
@@ -470,6 +586,9 @@ class Handler(BaseHTTPRequestHandler):
         if caminho == "/estado":
             with LOCK:
                 return self.responder(200, json.dumps(carregar_estado()).encode())
+        if caminho == "/cores_lib":
+            with LOCK:
+                return self.responder(200, json.dumps({"itens": ler_lib_cores()}).encode())
         if caminho.startswith("/camada/"):
             # só entrega arquivos que são camadas do estado atual
             arq = unquote(caminho[len("/camada/"):])
@@ -609,6 +728,52 @@ class Handler(BaseHTTPRequestHandler):
         self.msg(200, "Deslocamento salvo. O Firefox vai reiniciar agora.")
         threading.Thread(target=reiniciar_firefox, daemon=True).start()
 
+    def definir_cores(self, q):
+        """Salva as cores da aba Cores (JSON no corpo do pedido), regenera o CSS e guarda o esquema na biblioteca."""
+        dados = self.ler_corpo()
+        if dados is None or len(dados) > 4096:
+            return self.msg(400, "Cores inválidas.")
+        try:
+            novo = json.loads(dados.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return self.msg(400, "Cores inválidas.")
+        if not isinstance(novo, dict):
+            return self.msg(400, "Cores inválidas.")
+        cores = normalizar_cores(novo)
+        nome = novo.get("nome") if isinstance(novo.get("nome"), str) else ""
+        nome = nome.strip()[:40]
+        try:
+            with LOCK:
+                estado = carregar_estado()
+                estado["cores"] = cores
+                aplicar_estado(estado)
+                if cores != CORES_PADRAO:
+                    guardar_esquema(nome, cores)
+        except OSError as e:
+            print("Erro de arquivo:", type(e).__name__)
+            return self.msg(500, "Erro ao gravar na pasta do perfil do Firefox.")
+        self.msg(200, "Cores salvas. O Firefox vai reiniciar agora.")
+        threading.Thread(target=reiniciar_firefox, daemon=True).start()
+
+    def lib_cores_post(self, q, fav):
+        """Favorita (fav=True) ou exclui um esquema da biblioteca de cores."""
+        cid = q.get("id", [""])[0]
+        try:
+            with LOCK:
+                itens = ler_lib_cores()
+                alvo = [it for it in itens if it["id"] == cid]
+                if not alvo:
+                    return self.msg(404, "Não encontrado.")
+                if fav:
+                    alvo[0]["fav"] = not alvo[0]["fav"]
+                else:
+                    itens = [it for it in itens if it["id"] != cid]
+                gravar_lib_cores(itens)
+        except OSError as e:
+            print("Erro de arquivo:", type(e).__name__)
+            return self.msg(500, "Erro ao mexer na biblioteca de cores.")
+        self.msg(200, "ok")
+
     def do_POST(self):
         url = urlparse(self.path)
         q = parse_qs(url.query)
@@ -624,6 +789,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.camada_del(q)
         if url.path == "/offset":
             return self.definir_offset(q)
+        if url.path == "/cores":
+            return self.definir_cores(q)
+        if url.path in ("/cores_lib/fav", "/cores_lib/del"):
+            return self.lib_cores_post(q, url.path.endswith("fav"))
         self.responder(404, b"{}")
 
 
