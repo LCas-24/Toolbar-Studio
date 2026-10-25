@@ -22,7 +22,7 @@
   button:hover,.btn:hover{border-color:var(--acc)}
   button:disabled{opacity:.5;cursor:not-allowed}
   button.primary{background:var(--acc);color:#0b1220;border-color:var(--acc);font-weight:600}
-  button:focus-visible,.btn:focus-within,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  button:focus-visible,.btn:focus-within,input:focus-visible,select:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
   .tabs{display:flex;gap:8px;margin-bottom:16px}
   .tabs button[aria-selected=true]{border-color:var(--acc);color:var(--acc)}
   .stage{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:6px;background:#000;touch-action:none;cursor:grab}
@@ -77,14 +77,15 @@
   .cor input[type=text]{width:104px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px 8px;font:13px ui-monospace,Consolas,monospace}
   .cor .alfa{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mut)}
   .cor .alfa input{width:150px}
+  .cor select{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:8px;font:inherit}
 
   /* Prévia da barra do Firefox: usa as cores escolhidas ao vivo (variáveis --p-*) */
-  #prevFx{border:1px solid var(--line);border-radius:8px;padding:8px 10px 10px;margin-bottom:16px;background:var(--p-fundo,#1a1a1a);color:var(--p-texto,#fbfbfe);font-size:13px;user-select:none}
-  #prevFx .abas{display:flex;align-items:flex-end;gap:4px;margin-bottom:8px;flex-wrap:wrap}
-  #prevFx .aba{padding:6px 12px;border-radius:6px;display:flex;gap:8px;align-items:center;min-width:140px}
-  #prevFx .aba.sel{background:var(--p-aba,rgba(255,255,255,.12))}
+  #prevFx{border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:16px;background:var(--p-fundo,#1a1a1a);color:var(--p-texto,#fbfbfe);font-size:13px;user-select:none}
+  #prevFx .abas{display:flex;align-items:flex-end;gap:4px;padding:8px 10px;flex-wrap:wrap;background:var(--p-fundoabas,transparent)}
+  #prevFx .aba{padding:6px 12px;border-radius:var(--p-raio,6px);display:flex;gap:8px;align-items:center;min-width:140px}
+  #prevFx .aba.sel{background:var(--p-aba,rgba(255,255,255,.12));outline:var(--p-blarg,1px) solid var(--p-borda,rgba(255,255,255,.35));outline-offset:calc(var(--p-blarg,1px) * -1)}
   #prevFx .ic{color:var(--p-icones,#fbfbfe)}
-  #prevFx .nav{display:flex;align-items:center;gap:10px}
+  #prevFx .nav{display:flex;align-items:center;gap:10px;padding:8px 10px 10px;background:var(--p-fundonav,transparent);border-top:var(--p-divlarg,1px) solid var(--p-divisoria,rgba(255,255,255,.12))}
   #prevFx .url{flex:1;display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:6px;background:var(--p-url,rgba(0,0,0,.5))}
   #prevFx .url .tx{flex:1}
   #prevFx .marcada{color:var(--p-destaque,#80b4ff)}
@@ -93,7 +94,7 @@
   #gridCores{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
   .cc .mini{padding:34px 10px 10px;background:var(--p-fundo,#1a1a1a);color:var(--p-texto,#fbfbfe);font-size:12px}
   .cc .mt{display:flex;gap:6px;align-items:center;margin-bottom:6px}
-  .cc .mt .sel{padding:3px 10px;border-radius:5px;background:var(--p-aba,rgba(255,255,255,.12))}
+  .cc .mt .sel{padding:3px 10px;border-radius:var(--p-raio,5px);background:var(--p-aba,rgba(255,255,255,.12))}
   .cc .mu{display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:5px;background:var(--p-url,rgba(0,0,0,.5))}
   .cc .mu .tx{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .cc .ic{color:var(--p-icones,#fbfbfe)}
@@ -197,7 +198,7 @@
 
   <!-- Cores do tema -->
   <section id="secCores" hidden>
-    <p class="hint" style="margin-top:0">Mude as cores da barra de abas do Firefox: fundo, letras, ícones (estrela, botões), aba selecionada e campo de endereço. Clique no quadrado para abrir a paleta ou escreva o código da cor (por exemplo #ff8800). O que ficar em "padrão" não é alterado.</p>
+    <p class="hint" style="margin-top:0">Mude as cores da barra do Firefox: fundo das duas barras juntas ou de cada uma separada, divisória entre elas, letras, ícones, aba selecionada (cor, formato e borda) e campo de endereço. Clique no quadrado para abrir a paleta ou escreva o código da cor (por exemplo #ff8800). O que ficar em "padrão" não é alterado.</p>
     <div id="prevFx" aria-label="Prévia da barra do Firefox">
       <div class="abas">
         <div class="aba sel"><span class="ic">●</span><span>Aba selecionada</span><span class="ic">×</span></div>
@@ -218,7 +219,7 @@
       <button class="primary" id="aplicarCores">Aplicar cores no Firefox</button>
       <button id="padraoCores">Voltar ao padrão do Firefox</button>
     </div>
-    <p class="hint">Ao aplicar, o esquema fica guardado na Biblioteca Cores. "Voltar ao padrão do Firefox" tira todas as cores aplicadas por aqui e o Firefox volta ao tema que você escolheu nele (só o fundo da barra volta a #1a1a1a, a cor que a ferramenta sempre usou). Os dois reiniciam o Firefox. A prévia é uma amostra: o resultado exato depende da versão do Firefox, e imagens e GIFs ficam por cima da cor de fundo.</p>
+    <p class="hint">Ao aplicar, o esquema fica guardado na Biblioteca Cores. "Voltar ao padrão do Firefox" tira todas as cores aplicadas por aqui e o Firefox volta ao tema que você escolheu nele (só o fundo da barra volta a #1a1a1a, a cor que a ferramenta sempre usou). Os dois reiniciam o Firefox. "Fundo da barra" fica atrás das imagens e GIFs e vale para as duas barras; "Fundo da barra de abas" e "Fundo da barra de navegação" cobrem a imagem na linha deles. A prévia é uma amostra: o resultado exato depende da versão do Firefox.</p>
   </section>
 
   <!-- Biblioteca de Cores -->
@@ -754,16 +755,25 @@ $('fileLib').onchange = e => adicionarLib('lib', e);
 $('fileLibGif').onchange = e => adicionarLib('gif', e);
 
 /* ---------- Cores do tema ---------- */
-// Cada campo: k = nome no servidor, alfa = nome da opacidade (se tiver), base = cor mostrada na paleta enquanto está em "padrão"
+// Cada campo: k = nome no servidor, alfa = nome da opacidade (se tiver), larg = nome da espessura (se tiver),
+// base = cor mostrada na paleta enquanto está em "padrão"
 const CAMPOS_COR = [
-  {k:'fundo', nome:'Fundo da barra', dica:'Cor atrás da barra de abas, onde nenhuma imagem ou GIF cobre.', base:'#1a1a1a'},
+  {k:'fundo', nome:'Fundo da barra', dica:'Cor atrás de tudo, nas duas barras ao mesmo tempo, onde nenhuma imagem ou GIF cobre.', base:'#1a1a1a'},
+  {k:'fundoAbas', alfa:'fundoAbasAlfa', nome:'Fundo da barra de abas', dica:'Só a linha das abas. Cobre imagens e GIFs nessa linha; baixe a opacidade para ver a imagem.', base:'#1a1a1a'},
+  {k:'fundoNav', alfa:'fundoNavAlfa', nome:'Fundo da barra de navegação', dica:'Só a linha com as setas e o campo de endereço. Cobre imagens e GIFs nessa linha.', base:'#1a1a1a'},
+  {k:'divisoria', larg:'divisoriaLarg', nome:'Divisória entre as barras', dica:'Linha entre a barra de abas e a de navegação. Espessura 0 esconde a linha.', base:'#808080'},
   {k:'aba', alfa:'abaAlfa', nome:'Aba selecionada', dica:'Fundo da aba em que você está. Use a opacidade para deixar translúcida.', base:'#ffffff'},
+  {k:'abaBorda', larg:'abaBordaLarg', nome:'Borda da aba selecionada', dica:'Contorno em volta da aba em que você está. Espessura 0 tira o contorno.', base:'#ffffff'},
   {k:'url', alfa:'urlAlfa', nome:'Campo de pesquisa / endereço', dica:'Fundo da caixa onde você digita o endereço.', base:'#000000'},
   {k:'texto', nome:'Letras', dica:'Títulos das abas, endereço e favoritos.', base:'#fbfbfe'},
   {k:'icones', nome:'Itens: ícones e botões', dica:'Estrela, setas, recarregar, menu e o x das abas.', base:'#fbfbfe'},
   {k:'destaque', nome:'Destaque', dica:'Estrela já marcada e botões ativos.', base:'#80b4ff'},
 ];
-const CORES_PADRAO = {fundo:null, aba:null, abaAlfa:60, url:null, urlAlfa:50, texto:null, icones:null, destaque:null};
+const CORES_PADRAO = {fundo:null, fundoAbas:null, fundoAbasAlfa:100, fundoNav:null, fundoNavAlfa:100,
+  divisoria:null, divisoriaLarg:1, aba:null, abaAlfa:60, abaBorda:null, abaBordaLarg:1, forma:null,
+  url:null, urlAlfa:50, texto:null, icones:null, destaque:null};
+const FORMAS = [['', 'Padrão do Firefox'], ['reto', 'Retângulo'], ['suave', 'Arredondado'], ['pilula', 'Pílula (bem redondo)']];
+const RAIO = {reto:'0px', suave:'6px', pilula:'999px'};
 let cores = {...CORES_PADRAO};
 let coresSujas = false; // true = há mudanças ainda não aplicadas no Firefox
 
@@ -780,7 +790,7 @@ function rgbaDe(hex, alfa){
   return `rgba(${n >> 16 & 255}, ${n >> 8 & 255}, ${n & 255}, ${alfa / 100})`;
 }
 
-// Monta uma vez os cartões (paleta, código, opacidade e botão Padrão) de cada cor
+// Monta uma vez os cartões (paleta, código, opacidade/espessura e botão Padrão) de cada cor
 function montarCores(){
   const g = $('coresGrid'); g.textContent = '';
   for(const c of CAMPOS_COR){
@@ -812,8 +822,25 @@ function montarCores(){
       al.append('Opacidade', r, n); box.append(al);
       r.oninput = () => { cores[c.alfa] = +r.value; coresSujas = true; mostrarCores(); atualizarPreview(); };
     }
+    if(c.larg){
+      const al = document.createElement('div'); al.className = 'alfa';
+      const r = document.createElement('input'); r.type = 'range'; r.min = 0; r.max = 6; r.step = 1; r.id = 'larg_' + c.k;
+      r.setAttribute('aria-label', 'Espessura: ' + c.nome);
+      const n = document.createElement('span'); n.id = 'largN_' + c.k;
+      al.append('Espessura', r, n); box.append(al);
+      r.oninput = () => { cores[c.larg] = +r.value; coresSujas = true; mostrarCores(); atualizarPreview(); };
+    }
     g.append(box);
   }
+  // Formato da aba (retângulo, arredondado, pílula)
+  const box = document.createElement('div'); box.className = 'cor';
+  const h = document.createElement('h3'); h.textContent = 'Formato da aba';
+  const d = document.createElement('p'); d.className = 'dica';
+  d.textContent = 'Muda o formato das abas, e da borda junto com elas: retângulo, cantos arredondados ou pílula.';
+  const sel = document.createElement('select'); sel.id = 'forma'; sel.setAttribute('aria-label', 'Formato da aba');
+  for(const [v, t] of FORMAS){ const o = document.createElement('option'); o.value = v; o.textContent = t; sel.append(o); }
+  sel.onchange = () => { cores.forma = sel.value || null; coresSujas = true; mostrarCores(); atualizarPreview(); };
+  box.append(h, d, sel); g.append(box);
 }
 
 // Muda uma cor (v = null volta ao padrão) e atualiza campos e prévia
@@ -831,7 +858,12 @@ function mostrarCores(pulaHex){
       $('alfa_' + c.k).value = cores[c.alfa];
       $('alfaN_' + c.k).textContent = cores[c.alfa] + '%';
     }
+    if(c.larg){
+      $('larg_' + c.k).value = cores[c.larg];
+      $('largN_' + c.k).textContent = cores[c.larg] + ' px';
+    }
   }
+  $('forma').value = cores.forma || '';
 }
 
 // Pinta uma prévia (a grande ou a miniatura de um cartão): cada variável --p-* só existe
@@ -842,6 +874,13 @@ function varsPreview(st, c){
   por('--p-icones', c.icones); por('--p-destaque', c.destaque);
   por('--p-aba', c.aba && rgbaDe(c.aba, c.abaAlfa));
   por('--p-url', c.url && rgbaDe(c.url, c.urlAlfa));
+  por('--p-fundoabas', c.fundoAbas && rgbaDe(c.fundoAbas, c.fundoAbasAlfa));
+  por('--p-fundonav', c.fundoNav && rgbaDe(c.fundoNav, c.fundoNavAlfa));
+  por('--p-divisoria', c.divisoria);
+  por('--p-divlarg', c.divisoriaLarg !== undefined && c.divisoriaLarg !== 1 ? c.divisoriaLarg + 'px' : null);
+  por('--p-borda', c.abaBorda);
+  por('--p-blarg', c.abaBordaLarg !== undefined && c.abaBordaLarg !== 1 ? c.abaBordaLarg + 'px' : null);
+  por('--p-raio', RAIO[c.forma] || null);
 }
 function atualizarPreview(){ varsPreview($('prevFx').style, cores); }
 
