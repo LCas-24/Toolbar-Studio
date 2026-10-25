@@ -219,7 +219,7 @@
       <button class="primary" id="aplicarCores">Aplicar cores no Firefox</button>
       <button id="padraoCores">Voltar ao padrão do Firefox</button>
     </div>
-    <p class="hint">Ao aplicar, o esquema fica guardado na Biblioteca Cores. "Voltar ao padrão do Firefox" tira todas as cores aplicadas por aqui e o Firefox volta ao tema que você escolheu nele (só o fundo da barra volta a #1a1a1a, a cor que a ferramenta sempre usou). Os dois reiniciam o Firefox. "Fundo da barra" fica atrás das imagens e GIFs e vale para as duas barras; "Fundo da barra de abas" e "Fundo da barra de navegação" cobrem a imagem na linha deles. A prévia é uma amostra: o resultado exato depende da versão do Firefox.</p>
+    <p class="hint">Ao aplicar, o esquema fica guardado na Biblioteca Cores. "Voltar ao padrão do Firefox" tira todas as cores aplicadas por aqui e o Firefox volta ao tema que você escolheu nele (só o fundo da barra volta a #1a1a1a, a cor que a ferramenta sempre usou). Os dois reiniciam o Firefox. "Fundo da barra" fica atrás das imagens e GIFs e vale para as duas barras; "Fundo da barra de abas" e "Fundo da barra de navegação" cobrem a imagem na linha deles. A transparência real (ver o papel de parede, e não as outras janelas) usa o efeito Mica e só funciona no Windows 11 com os efeitos de transparência ligados; a ferramenta liga isso sozinha quando a opacidade fica abaixo de 100%. A prévia é uma amostra: o resultado exato depende da versão do Firefox.</p>
   </section>
 
   <!-- Biblioteca de Cores -->
@@ -758,7 +758,7 @@ $('fileLibGif').onchange = e => adicionarLib('gif', e);
 // Cada campo: k = nome no servidor, alfa = nome da opacidade (se tiver), larg = nome da espessura (se tiver),
 // base = cor mostrada na paleta enquanto está em "padrão"
 const CAMPOS_COR = [
-  {k:'fundo', nome:'Fundo da barra', dica:'Cor atrás de tudo, nas duas barras ao mesmo tempo, onde nenhuma imagem ou GIF cobre.', base:'#1a1a1a'},
+  {k:'fundo', alfa:'fundoAlfa', nome:'Fundo da barra', dica:'Cor atrás de tudo, nas duas barras ao mesmo tempo. Baixando a opacidade, o Firefox fica transparente e mostra o papel de parede (Windows 11).', base:'#1a1a1a'},
   {k:'fundoAbas', alfa:'fundoAbasAlfa', nome:'Fundo da barra de abas', dica:'Só a linha das abas. Cobre imagens e GIFs nessa linha; baixe a opacidade para ver a imagem.', base:'#1a1a1a'},
   {k:'fundoNav', alfa:'fundoNavAlfa', nome:'Fundo da barra de navegação', dica:'Só a linha com as setas e o campo de endereço. Cobre imagens e GIFs nessa linha.', base:'#1a1a1a'},
   {k:'divisoria', larg:'divisoriaLarg', nome:'Divisória entre as barras', dica:'Linha entre a barra de abas e a de navegação. Espessura 0 esconde a linha.', base:'#808080'},
@@ -769,7 +769,7 @@ const CAMPOS_COR = [
   {k:'icones', nome:'Itens: ícones e botões', dica:'Estrela, setas, recarregar, menu e o x das abas.', base:'#fbfbfe'},
   {k:'destaque', nome:'Destaque', dica:'Estrela já marcada e botões ativos.', base:'#80b4ff'},
 ];
-const CORES_PADRAO = {fundo:null, fundoAbas:null, fundoAbasAlfa:100, fundoNav:null, fundoNavAlfa:100,
+const CORES_PADRAO = {fundo:null, fundoAlfa:100, fundoAbas:null, fundoAbasAlfa:100, fundoNav:null, fundoNavAlfa:100,
   divisoria:null, divisoriaLarg:1, aba:null, abaAlfa:60, abaBorda:null, abaBordaLarg:1, forma:null,
   url:null, urlAlfa:50, texto:null, icones:null, destaque:null};
 const FORMAS = [['', 'Padrão do Firefox'], ['reto', 'Retângulo'], ['suave', 'Arredondado'], ['pilula', 'Pílula (bem redondo)']];
@@ -820,7 +820,12 @@ function montarCores(){
       r.setAttribute('aria-label', 'Opacidade: ' + c.nome);
       const n = document.createElement('span'); n.id = 'alfaN_' + c.k;
       al.append('Opacidade', r, n); box.append(al);
-      r.oninput = () => { cores[c.alfa] = +r.value; coresSujas = true; mostrarCores(); atualizarPreview(); };
+      r.oninput = () => {
+        cores[c.alfa] = +r.value; coresSujas = true;
+        // a opacidade do "Fundo da barra" também vale para as duas barras (depois dá para ajustar cada uma)
+        if(c.alfa === 'fundoAlfa'){ cores.fundoAbasAlfa = +r.value; cores.fundoNavAlfa = +r.value; }
+        mostrarCores(); atualizarPreview();
+      };
     }
     if(c.larg){
       const al = document.createElement('div'); al.className = 'alfa';
@@ -846,6 +851,9 @@ function montarCores(){
 // Muda uma cor (v = null volta ao padrão) e atualiza campos e prévia
 function definirCor(k, v, mantemTexto){
   cores[k] = v; coresSujas = true;
+  // "Fundo da barra" é o ponto de partida: leva junto o fundo da barra de abas e o da navegação,
+  // que depois podem ser ajustados um por um
+  if(k === 'fundo'){ cores.fundoAbas = v; cores.fundoNav = v; }
   mostrarCores(mantemTexto ? k : null); atualizarPreview();
 }
 
@@ -870,7 +878,7 @@ function mostrarCores(pulaHex){
 // quando a cor foi personalizada; sem ela, o CSS usa a aparência padrão
 function varsPreview(st, c){
   const por = (nome, v) => v ? st.setProperty(nome, v) : st.removeProperty(nome);
-  por('--p-fundo', c.fundo); por('--p-texto', c.texto);
+  por('--p-fundo', c.fundoAlfa !== undefined && c.fundoAlfa < 100 ? rgbaDe(c.fundo || '#1a1a1a', c.fundoAlfa) : c.fundo); por('--p-texto', c.texto);
   por('--p-icones', c.icones); por('--p-destaque', c.destaque);
   por('--p-aba', c.aba && rgbaDe(c.aba, c.abaAlfa));
   por('--p-url', c.url && rgbaDe(c.url, c.urlAlfa));
