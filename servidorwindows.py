@@ -80,10 +80,10 @@ RE_ID = re.compile(r"[0-9a-f]{8}|legado-png|legado-gif")
 RE_COR = re.compile(r"#[0-9a-fA-F]{6}")
 RE_ID_COR = re.compile(r"[0-9a-f]{8}")
 CAMPOS_COR = ("fundo", "fundoAbas", "fundoNav", "divisoria", "aba", "abaBorda", "url", "texto", "icones", "destaque")
-CAMPOS_ALFA = ("fundoAbasAlfa", "fundoNavAlfa", "abaAlfa", "urlAlfa")  # opacidade, 0 a 100
+CAMPOS_ALFA = ("fundoAlfa", "fundoAbasAlfa", "fundoNavAlfa", "abaAlfa", "urlAlfa")  # opacidade, 0 a 100
 CAMPOS_LARG = ("divisoriaLarg", "abaBordaLarg")  # espessura em px, 0 a 6
 FORMAS = {"reto": "0px", "suave": "6px", "pilula": "999px"}  # formato das abas -> border-radius
-CORES_PADRAO = {"fundo": None, "fundoAbas": None, "fundoAbasAlfa": 100, "fundoNav": None, "fundoNavAlfa": 100,
+CORES_PADRAO = {"fundo": None, "fundoAlfa": 100, "fundoAbas": None, "fundoAbasAlfa": 100, "fundoNav": None, "fundoNavAlfa": 100,
                 "divisoria": None, "divisoriaLarg": 1, "aba": None, "abaAlfa": 60,
                 "abaBorda": None, "abaBordaLarg": 1, "forma": None,
                 "url": None, "urlAlfa": 50, "texto": None, "icones": None, "destaque": None}
@@ -447,7 +447,10 @@ def gerar_bloco(estado):
         linhas.append("    background-position: " + ", ".join(c["bp"] for c in camadas) + " !important;")
         linhas.append("    background-repeat: " + ", ".join(["no-repeat"] * n) + " !important;")
     cores = normalizar_cores(estado.get("cores"))
-    linhas += [f"    background-color: {cores['fundo'] or COR_FUNDO_PADRAO} !important;",
+    cor_fundo = cores["fundo"] or COR_FUNDO_PADRAO
+    if cores["fundoAlfa"] < 100:
+        cor_fundo = rgba(cor_fundo, cores["fundoAlfa"])
+    linhas += [f"    background-color: {cor_fundo} !important;",
                "    border: none !important;", "}"]
     # Com a barra de favoritos escondida, os GIFs são deslocados para a esquerda
     off = estado["offset"]
@@ -490,11 +493,50 @@ def escrever_css(estado):
         f.write(txt)
 
 
+# ---------- Transparência real (Windows 11: Mica) ----------
+# O Mica mostra o papel de parede através do Firefox, nunca as outras janelas.
+# Liga com preferências no user.js do perfil (trecho gerenciado; o resto do arquivo não é tocado).
+MARC_JS_INI = "// TOOLBAR-STUDIO:INICIO (gerado pela ferramenta; nao edite entre as marcas)"
+MARC_JS_FIM = "// TOOLBAR-STUDIO:FIM"
+
+
+def precisa_transparencia(estado):
+    c = normalizar_cores(estado.get("cores"))
+    return min(c["fundoAlfa"], c["fundoAbasAlfa"], c["fundoNavAlfa"]) < 100
+
+
+def escrever_user_js(estado):
+    ligado = precisa_transparencia(estado)
+    caminho = os.path.join(PROFILE_DIR, "user.js")
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            txt = f.read()
+    except OSError:
+        txt = ""
+    ini, fim = txt.find(MARC_JS_INI), txt.find(MARC_JS_FIM)
+    tem = ini != -1 and fim > ini
+    if not ligado and not tem:
+        return
+    # desligando, grava "false" em vez de apagar: o Firefox guarda o valor antigo no prefs.js
+    bloco = MARC_JS_INI + "\n" + f'user_pref("widget.windows.mica", {"true" if ligado else "false"});\n'
+    if ligado:
+        bloco += 'user_pref("widget.windows.mica.toplevel-backdrop", 2);\n'
+    bloco += MARC_JS_FIM
+    if tem:
+        novo = txt[:ini] + bloco + txt[fim + len(MARC_JS_FIM):]
+    else:
+        novo = (txt.rstrip("\n") + "\n\n" if txt.strip() else "") + bloco + "\n"
+    if novo != txt:
+        with open(caminho, "w", encoding="utf-8") as f:
+            f.write(novo)
+
+
 def aplicar_estado(estado):
     """Salva o estado e regenera o CSS (chamar com LOCK preso)."""
     os.makedirs(CHROME_DIR, exist_ok=True)
     gravar(os.path.join(CHROME_DIR, "toolbar-studio.json"), json.dumps(estado, indent=1).encode("utf-8"))
     escrever_css(estado)
+    escrever_user_js(estado)
 
 
 def apagar_arquivo_camada(c):
