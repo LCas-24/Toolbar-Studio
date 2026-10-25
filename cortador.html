@@ -36,7 +36,7 @@
   .empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--mut);text-align:center;padding:16px;pointer-events:none}
   #status{color:var(--acc);font-weight:600;min-height:1.5em}
   [hidden]{display:none!important}
-  #grid,#gridGif{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:16px;color:var(--mut)}
+  #grid,#gridGif,#gridCores{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:16px;color:var(--mut)}
   .card{position:relative;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--panel);cursor:pointer}
   .card:hover{border-color:var(--acc)}
   .card img{display:block;width:100%;height:100px;object-fit:cover}
@@ -66,6 +66,40 @@
   .camada .txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
   .camada .txt small{display:block;color:var(--mut)}
   .camada button{padding:2px 8px}
+
+  /* Aba Cores */
+  .cores-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:16px}
+  .cor{border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:10px 12px;display:grid;gap:8px;align-content:start}
+  .cor h3{margin:0;font-size:14px;font-weight:600}
+  .cor .dica{margin:0;font-size:12px;color:var(--mut);min-height:2.9em}
+  .cor .linha{display:flex;align-items:center;gap:8px}
+  .cor input[type=color]{width:52px;height:36px;padding:0;border:1px solid var(--line);border-radius:6px;background:none;cursor:pointer}
+  .cor input[type=text]{width:104px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px 8px;font:13px ui-monospace,Consolas,monospace}
+  .cor .alfa{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mut)}
+  .cor .alfa input{width:150px}
+
+  /* Prévia da barra do Firefox: usa as cores escolhidas ao vivo (variáveis --p-*) */
+  #prevFx{border:1px solid var(--line);border-radius:8px;padding:8px 10px 10px;margin-bottom:16px;background:var(--p-fundo,#1a1a1a);color:var(--p-texto,#fbfbfe);font-size:13px;user-select:none}
+  #prevFx .abas{display:flex;align-items:flex-end;gap:4px;margin-bottom:8px;flex-wrap:wrap}
+  #prevFx .aba{padding:6px 12px;border-radius:6px;display:flex;gap:8px;align-items:center;min-width:140px}
+  #prevFx .aba.sel{background:var(--p-aba,rgba(255,255,255,.12))}
+  #prevFx .ic{color:var(--p-icones,#fbfbfe)}
+  #prevFx .nav{display:flex;align-items:center;gap:10px}
+  #prevFx .url{flex:1;display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:6px;background:var(--p-url,rgba(0,0,0,.5))}
+  #prevFx .url .tx{flex:1}
+  #prevFx .marcada{color:var(--p-destaque,#80b4ff)}
+
+  /* Biblioteca de Cores: cada cartão é uma miniatura da barra com as cores do esquema */
+  #gridCores{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+  .cc .mini{padding:34px 10px 10px;background:var(--p-fundo,#1a1a1a);color:var(--p-texto,#fbfbfe);font-size:12px}
+  .cc .mt{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+  .cc .mt .sel{padding:3px 10px;border-radius:5px;background:var(--p-aba,rgba(255,255,255,.12))}
+  .cc .mu{display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:5px;background:var(--p-url,rgba(0,0,0,.5))}
+  .cc .mu .tx{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cc .ic{color:var(--p-icones,#fbfbfe)}
+  .cc .marcada{color:var(--p-destaque,#80b4ff)}
+  .cc .nm{padding:6px 10px;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-top:1px solid var(--line)}
+  #nomeCores{width:260px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px 8px;font:inherit}
 </style>
 </head>
 <body>
@@ -73,7 +107,7 @@
   <h1>Cortador de fundo do Firefox</h1>
   <p class="sub">Corta imagens PNG no tamanho da barra e posiciona GIFs, sem recomprimir nada. Você pode ter várias imagens e vários GIFs na barra ao mesmo tempo.</p>
 
-  <div class="row">
+  <div class="row" id="rowTela">
     <label>Largura da tela (px do CSS)
       <input type="number" id="W" value="1920" min="200">
     </label>
@@ -85,8 +119,10 @@
   <div class="tabs" role="tablist">
     <button role="tab" id="tabPng" aria-selected="true">Imagem (PNG)</button>
     <button role="tab" id="tabGif" aria-selected="false">GIF</button>
+    <button role="tab" id="tabCores" aria-selected="false">Cores</button>
     <button role="tab" id="tabLib" aria-selected="false">Biblioteca</button>
     <button role="tab" id="tabLibGif" aria-selected="false">Biblioteca GIF</button>
+    <button role="tab" id="tabLibCores" aria-selected="false">Biblioteca Cores</button>
   </div>
 
   <!-- PNG -->
@@ -159,12 +195,44 @@
     <p class="hint">Clique num GIF para abrir no editor de GIF. Use a ★ para favoritar e o × para excluir da biblioteca.</p>
   </section>
 
+  <!-- Cores do tema -->
+  <section id="secCores" hidden>
+    <p class="hint" style="margin-top:0">Mude as cores da barra de abas do Firefox: fundo, letras, ícones (estrela, botões), aba selecionada e campo de endereço. Clique no quadrado para abrir a paleta ou escreva o código da cor (por exemplo #ff8800). O que ficar em "padrão" não é alterado.</p>
+    <div id="prevFx" aria-label="Prévia da barra do Firefox">
+      <div class="abas">
+        <div class="aba sel"><span class="ic">●</span><span>Aba selecionada</span><span class="ic">×</span></div>
+        <div class="aba"><span class="ic">●</span><span>Outra aba</span></div>
+        <span class="ic">+</span>
+      </div>
+      <div class="nav">
+        <span class="ic">←</span><span class="ic">→</span><span class="ic">⟳</span>
+        <div class="url"><span class="tx">https://exemplo.com</span><span class="ic">☆</span><span class="marcada">★</span></div>
+        <span class="ic">≡</span>
+      </div>
+    </div>
+    <div class="cores-grid" id="coresGrid"></div>
+    <div class="row">
+      <label>Nome deste esquema (opcional)
+        <input type="text" id="nomeCores" maxlength="40" placeholder="Ex.: Roxo noturno">
+      </label>
+      <button class="primary" id="aplicarCores">Aplicar cores no Firefox</button>
+      <button id="padraoCores">Voltar ao padrão do Firefox</button>
+    </div>
+    <p class="hint">Ao aplicar, o esquema fica guardado na Biblioteca Cores. "Voltar ao padrão do Firefox" tira todas as cores aplicadas por aqui e o Firefox volta ao tema que você escolheu nele (só o fundo da barra volta a #1a1a1a, a cor que a ferramenta sempre usou). Os dois reiniciam o Firefox. A prévia é uma amostra: o resultado exato depende da versão do Firefox, e imagens e GIFs ficam por cima da cor de fundo.</p>
+  </section>
+
+  <!-- Biblioteca de Cores -->
+  <section id="secLibCores" hidden>
+    <div id="gridCores"></div>
+    <p class="hint">Cada vez que você aplica cores no Firefox, o esquema é guardado aqui. Clique num esquema para abrir no editor de Cores. Use a ★ para favoritar (favoritos aparecem primeiro) e o × para excluir da biblioteca.</p>
+  </section>
+
   <!-- Camadas que estão na barra do Firefox agora -->
   <section id="secCamadas">
     <h2>Na barra do Firefox agora</h2>
     <div id="camadas">Nenhuma imagem ou GIF aplicado.</div>
     <div class="row">
-      <label>Deslocar GIFs com a barra de favoritos escondida (px)
+      <label id="lblOffset">Deslocar GIFs com a barra de favoritos escondida (px)
         <input type="number" id="offset" value="0" min="0" max="3000">
       </label>
       <button id="salvarOffset">Salvar deslocamento</button>
@@ -202,9 +270,11 @@ function setStatus(t){ $('status').textContent = t; }
 // Envia uma requisição de escrita ao servidor, mostra a resposta e atualiza a lista de camadas
 async function pedir(url, opts, enviando){
   setStatus(enviando);
+  let ok = false;
   try{
     const r = await api(url, opts);
     const j = await r.json();
+    ok = r.ok && !!j.msg;
     // sem "msg" o servidor recusou o pedido: 404 = rota que ele não conhece (servidor de outra versão);
     // 403 = endereço, origem ou token (senha temporária) que ele não aceita
     setStatus(j.msg || (r.status === 404
@@ -214,6 +284,7 @@ async function pedir(url, opts, enviando){
     setStatus('Não consegui falar com o servidor. Ele está rodando? (Abra esta página pelo endereço que o servidor mostrou ao iniciar.)');
   }
   carregarCamadas();
+  return ok;
 }
 // Adiciona o arquivo como uma nova camada (imagem ou GIF) na barra
 const aplicar = (query, blob) => pedir('/camada/add?' + query, {method:'POST', body:blob}, 'Enviando...');
@@ -230,6 +301,8 @@ async function carregarCamadas(){
     const e = await (await api('/estado')).json();
     camadasAtuais = e.camadas || [];
     $('offset').value = e.offset || 0;
+    // cores salvas (só se você não estiver no meio de uma edição ainda não aplicada)
+    if(e.cores && !coresSujas){ cores = {...CORES_PADRAO, ...e.cores}; mostrarCores(); atualizarPreview(); }
   }catch{ return; }
   renderCamadas();
   renderPrev();
@@ -296,16 +369,24 @@ function showTab(nome){
   $('secGif').hidden = nome !== 'gif';
   $('secLib').hidden = nome !== 'lib';
   $('secLibGif').hidden = nome !== 'libgif';
-  for(const [k, id] of [['png','tabPng'],['gif','tabGif'],['lib','tabLib'],['libgif','tabLibGif']])
+  $('secCores').hidden = nome !== 'cores';
+  $('secLibCores').hidden = nome !== 'libcores';
+  // nas abas de cores, largura/altura da barra e o deslocamento de GIFs não fazem sentido
+  const nasCores = nome === 'cores' || nome === 'libcores';
+  $('rowTela').hidden = nasCores; $('lblOffset').hidden = nasCores; $('salvarOffset').hidden = nasCores;
+  for(const [k, id] of [['png','tabPng'],['gif','tabGif'],['lib','tabLib'],['libgif','tabLibGif'],['cores','tabCores'],['libcores','tabLibCores']])
     $(id).setAttribute('aria-selected', k === nome);
   if(nome === 'gif') updateGif();
   if(nome === 'lib') carregarLib('lib');
   if(nome === 'libgif') carregarLib('gif');
+  if(nome === 'libcores') carregarLibCores();
 }
 $('tabPng').onclick = () => showTab('png');
 $('tabGif').onclick = () => showTab('gif');
 $('tabLib').onclick = () => showTab('lib');
 $('tabLibGif').onclick = () => showTab('libgif');
+$('tabCores').onclick = () => showTab('cores');
+$('tabLibCores').onclick = () => showTab('libcores');
 
 /* ---------- PNG ---------- */
 const cv = $('cv'), ctx = cv.getContext('2d');
@@ -672,6 +753,164 @@ async function adicionarLib(k, e){
 $('fileLib').onchange = e => adicionarLib('lib', e);
 $('fileLibGif').onchange = e => adicionarLib('gif', e);
 
+/* ---------- Cores do tema ---------- */
+// Cada campo: k = nome no servidor, alfa = nome da opacidade (se tiver), base = cor mostrada na paleta enquanto está em "padrão"
+const CAMPOS_COR = [
+  {k:'fundo', nome:'Fundo da barra', dica:'Cor atrás da barra de abas, onde nenhuma imagem ou GIF cobre.', base:'#1a1a1a'},
+  {k:'aba', alfa:'abaAlfa', nome:'Aba selecionada', dica:'Fundo da aba em que você está. Use a opacidade para deixar translúcida.', base:'#ffffff'},
+  {k:'url', alfa:'urlAlfa', nome:'Campo de pesquisa / endereço', dica:'Fundo da caixa onde você digita o endereço.', base:'#000000'},
+  {k:'texto', nome:'Letras', dica:'Títulos das abas, endereço e favoritos.', base:'#fbfbfe'},
+  {k:'icones', nome:'Itens: ícones e botões', dica:'Estrela, setas, recarregar, menu e o x das abas.', base:'#fbfbfe'},
+  {k:'destaque', nome:'Destaque', dica:'Estrela já marcada e botões ativos.', base:'#80b4ff'},
+];
+const CORES_PADRAO = {fundo:null, aba:null, abaAlfa:60, url:null, urlAlfa:50, texto:null, icones:null, destaque:null};
+let cores = {...CORES_PADRAO};
+let coresSujas = false; // true = há mudanças ainda não aplicadas no Firefox
+
+// "#abc" ou "abc" ou "#aabbcc" -> "#aabbcc"; devolve null se não for uma cor válida
+function normHex(v){
+  v = (v || '').trim();
+  if(v[0] !== '#') v = '#' + v;
+  if(/^#[0-9a-f]{3}$/i.test(v)) v = '#' + [...v.slice(1)].map(c => c + c).join('');
+  return /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : null;
+}
+// "#rrggbb" + opacidade (0 a 100) -> "rgba(r, g, b, a)"
+function rgbaDe(hex, alfa){
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n >> 16 & 255}, ${n >> 8 & 255}, ${n & 255}, ${alfa / 100})`;
+}
+
+// Monta uma vez os cartões (paleta, código, opacidade e botão Padrão) de cada cor
+function montarCores(){
+  const g = $('coresGrid'); g.textContent = '';
+  for(const c of CAMPOS_COR){
+    const box = document.createElement('div'); box.className = 'cor';
+    const h = document.createElement('h3'); h.textContent = c.nome;
+    const d = document.createElement('p'); d.className = 'dica'; d.textContent = c.dica;
+    const lin = document.createElement('div'); lin.className = 'linha';
+    const pick = document.createElement('input'); pick.type = 'color'; pick.id = 'cor_' + c.k; pick.value = c.base;
+    pick.title = 'Abrir a paleta de cores'; pick.setAttribute('aria-label', 'Paleta: ' + c.nome);
+    const hex = document.createElement('input'); hex.type = 'text'; hex.id = 'hex_' + c.k; hex.maxLength = 7;
+    hex.placeholder = 'padrão'; hex.spellcheck = false; hex.setAttribute('aria-label', 'Código da cor: ' + c.nome);
+    const rst = document.createElement('button'); rst.textContent = 'Padrão'; rst.title = 'Voltar ao padrão do Firefox';
+    lin.append(pick, hex, rst); box.append(h, d, lin);
+    pick.oninput = () => definirCor(c.k, pick.value);
+    // escrevendo o código: vale assim que ficar uma cor válida (#abc, abc, #aabbcc ou aabbcc);
+    // ao sair do campo, mostra a forma completa, e campo vazio volta ao padrão
+    hex.oninput = () => { const v = normHex(hex.value); if(v) definirCor(c.k, v, true); };
+    hex.onchange = () => {
+      if(!hex.value.trim()) return definirCor(c.k, null);
+      const v = normHex(hex.value);
+      if(v) definirCor(c.k, v); else mostrarCores();
+    };
+    rst.onclick = () => definirCor(c.k, null);
+    if(c.alfa){
+      const al = document.createElement('div'); al.className = 'alfa';
+      const r = document.createElement('input'); r.type = 'range'; r.min = 0; r.max = 100; r.step = 1; r.id = 'alfa_' + c.k;
+      r.setAttribute('aria-label', 'Opacidade: ' + c.nome);
+      const n = document.createElement('span'); n.id = 'alfaN_' + c.k;
+      al.append('Opacidade', r, n); box.append(al);
+      r.oninput = () => { cores[c.alfa] = +r.value; coresSujas = true; mostrarCores(); atualizarPreview(); };
+    }
+    g.append(box);
+  }
+}
+
+// Muda uma cor (v = null volta ao padrão) e atualiza campos e prévia
+function definirCor(k, v, mantemTexto){
+  cores[k] = v; coresSujas = true;
+  mostrarCores(mantemTexto ? k : null); atualizarPreview();
+}
+
+// Copia o estado (cores) para os campos da tela; "pulaHex" evita reescrever o campo que está sendo digitado
+function mostrarCores(pulaHex){
+  for(const c of CAMPOS_COR){
+    $('cor_' + c.k).value = cores[c.k] || c.base;
+    if(c.k !== pulaHex) $('hex_' + c.k).value = cores[c.k] || '';
+    if(c.alfa){
+      $('alfa_' + c.k).value = cores[c.alfa];
+      $('alfaN_' + c.k).textContent = cores[c.alfa] + '%';
+    }
+  }
+}
+
+// Pinta uma prévia (a grande ou a miniatura de um cartão): cada variável --p-* só existe
+// quando a cor foi personalizada; sem ela, o CSS usa a aparência padrão
+function varsPreview(st, c){
+  const por = (nome, v) => v ? st.setProperty(nome, v) : st.removeProperty(nome);
+  por('--p-fundo', c.fundo); por('--p-texto', c.texto);
+  por('--p-icones', c.icones); por('--p-destaque', c.destaque);
+  por('--p-aba', c.aba && rgbaDe(c.aba, c.abaAlfa));
+  por('--p-url', c.url && rgbaDe(c.url, c.urlAlfa));
+}
+function atualizarPreview(){ varsPreview($('prevFx').style, cores); }
+
+// Envia as cores ao servidor, que aplica no Firefox e guarda o esquema na biblioteca
+async function enviarCores(corpo, msg){
+  const ok = await pedir('/cores', {method:'POST', body: JSON.stringify(corpo), headers:{'Content-Type':'application/json'}}, msg);
+  if(ok) coresSujas = false;
+}
+$('aplicarCores').onclick = () => enviarCores({...cores, nome: $('nomeCores').value}, 'Aplicando cores...');
+
+// Volta ao tema do Firefox: tira todas as cores personalizadas e aplica na hora
+$('padraoCores').onclick = () => {
+  if(!confirm('Tirar todas as cores aplicadas por aqui e voltar ao tema do Firefox? O Firefox vai reiniciar.')) return;
+  cores = {...CORES_PADRAO}; coresSujas = true; $('nomeCores').value = '';
+  mostrarCores(); atualizarPreview();
+  enviarCores({...CORES_PADRAO}, 'Voltando ao padrão do Firefox...');
+};
+
+/* ---------- Biblioteca de Cores ---------- */
+// Miniatura da barra com as cores de um esquema (textContent em tudo: nomes nunca viram HTML)
+function miniaturaCores(c){
+  const m = document.createElement('div'); m.className = 'mini';
+  varsPreview(m.style, c);
+  const mt = document.createElement('div'); mt.className = 'mt';
+  const sel = document.createElement('span'); sel.className = 'sel'; sel.textContent = 'Aa';
+  const ab = document.createElement('span'); ab.textContent = 'Aba';
+  mt.append(sel, ab);
+  const mu = document.createElement('div'); mu.className = 'mu';
+  const tx = document.createElement('span'); tx.className = 'tx'; tx.textContent = 'exemplo.com';
+  const e1 = document.createElement('span'); e1.className = 'ic'; e1.textContent = '☆';
+  const e2 = document.createElement('span'); e2.className = 'marcada'; e2.textContent = '★';
+  mu.append(tx, e1, e2);
+  m.append(mt, mu);
+  return m;
+}
+
+async function carregarLibCores(){
+  const dados = await (await api('/cores_lib')).json();
+  // mais recentes primeiro; favoritos na frente (a ordenação preserva a ordem anterior)
+  const itens = [...dados.itens].reverse().sort((a, b) => (b.fav ? 1 : 0) - (a.fav ? 1 : 0));
+  const g = $('gridCores'); g.textContent = '';
+  if(!itens.length){ g.textContent = 'Biblioteca vazia. Aplique cores na aba Cores para guardar aqui.'; return; }
+  for(const it of itens){
+    const c = document.createElement('div'); c.className = 'card cc'; c.title = it.nome;
+    const f = document.createElement('button'); f.className = 'fav' + (it.fav ? ' on' : '');
+    f.textContent = '★'; f.title = 'Favoritar';
+    f.onclick = async e => {
+      e.stopPropagation();
+      await api('/cores_lib/fav?id=' + encodeURIComponent(it.id), {method:'POST'});
+      carregarLibCores();
+    };
+    const x = document.createElement('button'); x.className = 'del'; x.textContent = '×'; x.title = 'Excluir';
+    x.onclick = async e => {
+      e.stopPropagation();
+      if(!confirm(`Excluir "${it.nome}" da biblioteca?`)) return;
+      await api('/cores_lib/del?id=' + encodeURIComponent(it.id), {method:'POST'});
+      carregarLibCores();
+    };
+    const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = it.nome;
+    // clicar abre o esquema no editor de Cores (ainda não aplicado até clicar em "Aplicar")
+    c.onclick = () => {
+      cores = {...CORES_PADRAO, ...it.cores}; coresSujas = true;
+      $('nomeCores').value = it.nome;
+      mostrarCores(); atualizarPreview(); showTab('cores');
+    };
+    c.append(miniaturaCores(it.cores), f, x, nm); g.append(c);
+  }
+}
+
 /* ---------- Arrastar arquivos para as áreas ---------- */
 for(const [id, fn, k] of [['stage', loadImage, 'lib'], ['gifStage', loadGif, 'gif']]){
   const el = $(id);
@@ -691,6 +930,7 @@ Winp.onchange = Hinp.onchange = relayout;
 window.addEventListener('resize', relayout);
 Winp.value = screen.width;
 layout();
+montarCores(); mostrarCores(); atualizarPreview();
 carregarCamadas();
 </script>
 </body>
